@@ -14,7 +14,6 @@ import {
   getGuild,
   getRolePerms,
   listSources,
-  maxComplaintEventId,
   maxRuleEventId,
   newRolePerm,
   updateGuild,
@@ -31,15 +30,13 @@ export const CHANNEL_NAMES = {
   settings: 'ai-настройки',
   logs: 'ai-логи',
   rules: 'ai-правила',
-  complaints: 'ai-жалобы',
 } as const;
 export type Purpose = keyof typeof CHANNEL_NAMES;
-export const PURPOSES: Purpose[] = ['assistant', 'rules', 'complaints', 'settings', 'logs'];
+export const PURPOSES: Purpose[] = ['assistant', 'rules', 'settings', 'logs'];
 
 export const PURPOSE_LABELS: Record<Purpose, string> = {
   assistant: '#ai-помощник — вопросы AI',
   rules: '#ai-правила — обновления правил',
-  complaints: '#ai-жалобы — жалобы на привязанные игровые ID',
   settings: '#ai-настройки — меню администраторов',
   logs: '#ai-логи — ошибки и журнал изменений',
 };
@@ -47,7 +44,6 @@ export const PURPOSE_LABELS: Record<Purpose, string> = {
 const TOPICS: Record<Purpose, string> = {
   assistant: 'Задайте вопрос о NOVA RP — AI ответит по данным форума forum.grand-rp.su. Команды: /помощь',
   rules: 'Автоматические уведомления об изменениях правил NOVA RP с форума (только правила, без жалоб)',
-  complaints: 'Бот сообщает, если на форуме подали жалобу на ваш игровой ID. Привязать ID: /мой-id добавить',
   settings: 'Панель управления ботом NOVA RP AI (видна только администраторам)',
   logs: 'Ошибки бота и журнал изменений настроек',
 };
@@ -55,7 +51,6 @@ const TOPICS: Record<Purpose, string> = {
 const PURPOSE_COLUMN = {
   assistant: 'assistant_channel_id',
   rules: 'rules_channel_id',
-  complaints: 'complaints_channel_id',
   settings: 'settings_channel_id',
   logs: 'logs_channel_id',
 } as const;
@@ -68,12 +63,7 @@ export function channelIdFor(guildId: string, purpose: Purpose): string | null {
 export function setChannelFor(guildId: string, purpose: Purpose, channelId: string): void {
   if (channelIdFor(guildId, purpose) === channelId) return;
   // Новые каналы уведомлений начинают с текущего момента — без старых событий.
-  const patch =
-    purpose === 'rules'
-      ? { last_rule_event_id: maxRuleEventId() }
-      : purpose === 'complaints'
-        ? { last_complaint_event_id: maxComplaintEventId() }
-        : {};
+  const patch = purpose === 'rules' ? { last_rule_event_id: maxRuleEventId() } : {};
   updateGuild(guildId, { [PURPOSE_COLUMN[purpose]]: channelId, ...patch });
 }
 
@@ -224,7 +214,7 @@ export async function syncAllRoleAccess(guild: Guild, resetRoleIds: string[] = [
           isEveryone,
         );
       }
-      for (const readOnly of [channels.rules, channels.complaints]) {
+      for (const readOnly of [channels.rules]) {
         if (!readOnly) continue;
         await applyOverwrite(
           readOnly,
@@ -297,7 +287,7 @@ export async function applySetup(client: Client, guild: Guild): Promise<SetupRes
         permissionOverwrites:
           p === 'assistant'
             ? [botOverwrite(client)]
-            : p === 'rules' || p === 'complaints'
+            : p === 'rules'
               ? readOnlyOverwrites(client, guild)
               : privateOverwrites(client, guild, p),
         reason: 'NOVA RP AI: /setup',

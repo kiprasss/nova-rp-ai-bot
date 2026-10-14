@@ -92,7 +92,6 @@ const COMMAND_LABELS: Record<(typeof BOT_COMMANDS)[number], string> = {
   faq: 'Быстрые ответы',
   помощь: 'Список команд',
   setupls: 'Личное меню в ЛС',
-  'мой-id': 'Уведомления о жалобах на свой ID',
 };
 
 const OP_SECTION: Record<string, Section> = {

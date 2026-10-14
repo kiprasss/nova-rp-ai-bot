@@ -9,8 +9,7 @@ import {
 } from 'discord.js';
 import { PROVIDERS, isProviderId, verifyToken } from '../ai/providers.js';
 import { maskSecret, secrets } from '../crypto.js';
-import { MAX_IDS_PER_USER, addPlayerId, getUserSettings, listPlayerIds, removePlayerId, saveUserSettings } from '../db/repo.js';
-import { idsOverview, normalizeGameId } from '../commands/playerIds.js';
+import { getUserSettings, saveUserSettings } from '../db/repo.js';
 import { UserError } from '../util/errors.js';
 import { truncate } from '../util/text.js';
 import { COLORS } from './guildLog.js';
@@ -34,7 +33,6 @@ export function buildDmHome(): BaseMessageOptions {
         '🖥 **Мои серверы** — управление ботом на серверах, где вы администратор',
         '🔑 **Личный токен** — свой AI-токен для вопросов в ЛС',
         '⚙️ **Личные настройки** — длина ответа и показ источников',
-        '🎮 **Мои игровые ID** — уведомления, если на форуме подали жалобу на ваш ID',
         '',
         '💬 В личных сообщениях можно просто написать вопрос — AI ответит по данным форума NOVA RP.',
       ].join('\n'),
@@ -46,7 +44,6 @@ export function buildDmHome(): BaseMessageOptions {
       { label: 'Мои серверы', value: 'servers', emoji: '🖥', description: 'Роли, токены, источники ваших серверов' },
       { label: 'Личный токен', value: 'token', emoji: '🔑', description: 'AI-токен для личного использования в ЛС' },
       { label: 'Личные настройки', value: 'prefs', emoji: '⚙️', description: 'Кратко/подробно, показ источников' },
-      { label: 'Мои игровые ID', value: 'ids', emoji: '🎮', description: 'Уведомления о жалобах на ваш ID' },
     );
   return { embeds: [embed], components: [row(select)] };
 }
@@ -135,32 +132,6 @@ async function viewToken(client: Client, userId: string, note?: string): Promise
   };
 }
 
-function viewIds(userId: string, note?: string): BaseMessageOptions {
-  const s = getUserSettings(userId);
-  const ids = listPlayerIds(userId);
-  const embed = new EmbedBuilder()
-    .setColor(COLORS.info)
-    .setTitle('🎮 Мои игровые ID')
-    .setDescription(
-      `${note ? `${note}\n\n` : ''}${idsOverview(userId, null)}\n\n` +
-        'Бот следит за разделом «Жалобы на игроков» и, если появится жалоба с вашим ID в поле «ID нарушителя», сразу упомянет вас в канале #ai-жалобы.',
-    );
-  const components = [];
-  if (ids.length) {
-    components.push(
-      row(new StringSelectMenuBuilder().setCustomId('dm:iddel').setPlaceholder('🗑 Отвязать ID…').addOptions(ids.map((id) => ({ label: id, value: id })))),
-    );
-  }
-  components.push(
-    row(
-      button('dm:idadd', 'Добавить ID', ButtonStyle.Success, '➕'),
-      button('dm:idnotify', s.complaint_dm ? 'Уведомления в ЛС: вкл' : 'Уведомления в ЛС: выкл', s.complaint_dm ? ButtonStyle.Primary : ButtonStyle.Secondary, '🔔'),
-      backHome(),
-    ),
-  );
-  return { embeds: [embed], components };
-}
-
 function viewPrefs(userId: string, note?: string): BaseMessageOptions {
   const s = getUserSettings(userId);
   const embed = new EmbedBuilder()
@@ -195,7 +166,6 @@ export async function handleDmInteraction(i: DmInteraction): Promise<void> {
       if (section === 'servers') await updateOrReply(i, await viewServers(i.client, uid));
       else if (section === 'token') await updateOrReply(i, await viewToken(i.client, uid));
       else if (section === 'prefs') await updateOrReply(i, viewPrefs(uid));
-      else if (section === 'ids') await updateOrReply(i, viewIds(uid));
       else await updateOrReply(i, buildDmHome());
       return;
     }
@@ -279,32 +249,6 @@ export async function handleDmInteraction(i: DmInteraction): Promise<void> {
     case 'len': {
       saveUserSettings({ ...s, answer_length: arg === 'long' ? 'long' : arg === 'short' ? 'short' : 'auto' });
       await updateOrReply(i, viewPrefs(uid, '✅ Сохранено.'));
-      return;
-    }
-    case 'idadd': {
-      if (!i.isButton()) return;
-      await i.showModal(modal('dm:idaddm', 'Привязать игровой ID', [textInput('id', 'Ваш игровой ID (только цифры)', { max: 7, placeholder: '54321' })]));
-      return;
-    }
-    case 'idaddm': {
-      if (!i.isModalSubmit()) return;
-      const id = normalizeGameId(i.fields.getTextInputValue('id'));
-      if (!id) throw new UserError('Игровой ID — это только цифры (до 7).');
-      const res = addPlayerId(uid, id);
-      if (res === 'taken') throw new UserError(`ID **${id}** уже привязан другим пользователем. Если это ваш ID — обратитесь к администрации сервера.`);
-      if (res === 'limit') throw new UserError(`Можно привязать не больше ${MAX_IDS_PER_USER} ID.`);
-      await updateOrReply(i, viewIds(uid, res === 'exists' ? `ℹ️ ID ${id} уже привязан.` : `✅ ID **${id}** привязан.`));
-      return;
-    }
-    case 'iddel': {
-      if (!i.isStringSelectMenu()) return;
-      removePlayerId(i.values[0], uid);
-      await updateOrReply(i, viewIds(uid, `🗑 ID ${i.values[0]} отвязан.`));
-      return;
-    }
-    case 'idnotify': {
-      saveUserSettings({ ...s, complaint_dm: s.complaint_dm ? 0 : 1 });
-      await updateOrReply(i, viewIds(uid, '✅ Сохранено.'));
       return;
     }
     case 'src': {

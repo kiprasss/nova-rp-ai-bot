@@ -67,27 +67,6 @@ export const commandDefinitions: RESTPostAPIChatInputApplicationCommandsJSONBody
     .toJSON(),
 
   new SlashCommandBuilder()
-    .setName('мой-id')
-    .setDescription('Привязать игровой ID: бот сообщит, если на форуме подадут жалобу на этот ID')
-    .addSubcommand((s) =>
-      s
-        .setName('добавить')
-        .setDescription('Привязать свой игровой ID (до 3)')
-        .addStringOption((o) => o.setName('id').setDescription('Ваш игровой ID (только цифры)').setRequired(true).setMaxLength(7)),
-    )
-    .addSubcommand((s) =>
-      s
-        .setName('удалить')
-        .setDescription('Отвязать игровой ID')
-        .addStringOption((o) => o.setName('id').setDescription('Игровой ID').setRequired(true).setMaxLength(7)),
-    )
-    .addSubcommand((s) => s.setName('список').setDescription('Мои привязанные ID и последние жалобы на них'))
-    .addSubcommand((s) => s.setName('проверить').setDescription('Проверить форум прямо сейчас (новые и существующие жалобы на мои ID)'))
-    .setContexts(...GUILD_AND_DM)
-    .setIntegrationTypes(...BOTH_INSTALLS)
-    .toJSON(),
-
-  new SlashCommandBuilder()
     .setName('clean')
     .setDescription('Удалить сообщения бота в канале или в ЛС (меню и важное не трогает)')
     .addChannelOption((o) =>

@@ -57,14 +57,6 @@ export const config = {
   defaultRefreshHours: Math.max(1, int('DEFAULT_REFRESH_HOURS', 12)),
   seedGlobalSources: bool('SEED_GLOBAL_SOURCES', true),
 
-  /** Разделы жалоб, которые бот проверяет на жалобы против привязанных игровых ID. */
-  complaintWatchUrls: str('COMPLAINT_WATCH_URLS', `${str('FORUM_BASE_URL', 'https://forum.grand-rp.su').replace(/\/+$/, '')}/forums/1010/`)
-    .split(',')
-    .map((u) => u.trim())
-    .filter(Boolean),
-  complaintCheckMinutes: Math.max(3, int('COMPLAINT_CHECK_MINUTES', 10)),
-  /** Сколько страниц раздела жалоб просматривать при первом (глубоком) проходе. */
-  complaintScanPages: Math.min(10, Math.max(1, int('COMPLAINT_SCAN_PAGES', 3))),
 
   guildHourlyLimit: int('GUILD_HOURLY_LIMIT', 300),
   defaultUserHourlyLimit: int('DEFAULT_USER_HOURLY_LIMIT', 10),
