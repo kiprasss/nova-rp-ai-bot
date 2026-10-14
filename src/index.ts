@@ -7,6 +7,7 @@ import { importSeedIfEmpty } from './kbSeed.js';
 import { onInteraction, onMessage } from './discord/router.js';
 import { seedGlobalSources, startScheduler } from './scheduler.js';
 import { dirname, join } from 'node:path';
+import { setForumDebugDir } from './forum/blockDiagnostics.js';
 import { acquireInstanceLock } from './util/instanceLock.js';
 import { log, setLogLevel } from './util/logger.js';
 
@@ -23,6 +24,7 @@ if (runningPid) {
 }
 
 initSecretKey(config.encryptionKey);
+setForumDebugDir(dirname(config.databasePath)); // data/logs/forum.log и страница блокировки
 openDatabase(config.databasePath);
 importSeedIfEmpty();
 seedGlobalSources();

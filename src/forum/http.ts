@@ -1,4 +1,5 @@
 import { log } from '../util/logger.js';
+import { collectBlockDetails, logForumBlock, type BlockDetails } from './blockDiagnostics.js';
 
 export class HttpError extends Error {
   constructor(
@@ -11,12 +12,16 @@ export class HttpError extends Error {
 
 /** Форум включил защиту от ботов (проверка браузера) — данные получить нельзя, обходить её бот не будет. */
 export class ForumBlockedError extends Error {
-  constructor() {
+  /** Подробности ответа защиты (статус, заголовки, текст страницы). */
+  public details: BlockDetails | null = null;
+
+  constructor(details?: BlockDetails) {
     super(
       'Форум включил защиту от ботов (проверка браузера) и не отдаёт страницы. База знаний сохранена, бот продолжит отвечать по ней. ' +
         'Чтобы обновления снова работали, попросите администрацию форума добавить бота в белый список (User-Agent из .env).',
     );
     this.name = 'ForumBlockedError';
+    this.details = details ?? null;
   }
 }
 
@@ -79,7 +84,11 @@ export class PoliteFetcher {
         continue;
       }
       const body = await res.text();
-      if (isBotChallenge(res.status, body)) throw new ForumBlockedError();
+      if (isBotChallenge(res.status, body)) {
+        const details = collectBlockDetails(url, res, body, this.opts.userAgent);
+        logForumBlock(details);
+        throw new ForumBlockedError(details);
+      }
       if (!res.ok) throw new HttpError(res.status, url);
       return body;
     }
