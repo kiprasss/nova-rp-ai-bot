@@ -6,10 +6,22 @@ import { openDatabase } from './db/database.js';
 import { importSeedIfEmpty } from './kbSeed.js';
 import { onInteraction, onMessage } from './discord/router.js';
 import { seedGlobalSources, startScheduler } from './scheduler.js';
+import { dirname, join } from 'node:path';
+import { acquireInstanceLock } from './util/instanceLock.js';
 import { log, setLogLevel } from './util/logger.js';
 
 setLogLevel(config.logLevel);
 assertRuntimeConfig();
+
+const runningPid = acquireInstanceLock(join(dirname(config.databasePath), 'bot.lock'));
+if (runningPid) {
+  log.error(
+    `Бот уже запущен на этом компьютере (процесс ${runningPid}). Второй экземпляр не запускается — ` +
+      'иначе каждое действие будет обрабатываться дважды. Закройте лишнее окно или используйте уже запущенный бот.',
+  );
+  process.exit(3); // код 3 — start.bat не перезапускает бота
+}
+
 initSecretKey(config.encryptionKey);
 openDatabase(config.databasePath);
 importSeedIfEmpty();

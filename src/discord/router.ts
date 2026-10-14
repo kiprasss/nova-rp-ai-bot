@@ -51,8 +51,13 @@ export async function onInteraction(i: Interaction): Promise<void> {
       await replyText(i, err.message);
       return;
     }
-    if (err instanceof DiscordAPIError && err.code === 10062) {
-      log.warn('Взаимодействие истекло (Unknown interaction)');
+    // 40060 «already acknowledged» и 10062 «Unknown interaction» почти всегда значат, что бот запущен
+    // в двух местах сразу (например, на ПК и на хостинге) и второй экземпляр ответил первым.
+    if (err instanceof DiscordAPIError && (err.code === 10062 || err.code === 40060)) {
+      log.warn(
+        `Взаимодействие уже обработано (код ${err.code}). Если это повторяется — бот запущен дважды ` +
+          '(второе окно, хостинг или другой ПК). Оставьте только один запущенный экземпляр.',
+      );
       return;
     }
     const where = i.isChatInputCommand() ? `/${i.commandName}` : 'customId' in i ? `компонент ${i.customId}` : 'взаимодействие';

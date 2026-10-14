@@ -23,6 +23,11 @@ if not exist "node_modules" (
 :loop
 echo Starting bot... (close this window or press Ctrl+C to stop)
 node index.js
+if errorlevel 3 if not errorlevel 4 (
+  echo [!] Bot is already running in another window. Close it first.
+  pause
+  exit /b 3
+)
 echo.
 echo Bot stopped. Restarting in 10 seconds... (Ctrl+C to cancel)
 timeout /t 10 >nul
