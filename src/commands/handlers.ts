@@ -15,6 +15,7 @@ import {
 } from 'discord.js';
 import { matchFaq } from '../ai/faq.js';
 import { cmdClean } from './clean.js';
+import { cmdImport } from './importFile.js';
 import { cmdPlayerIds } from './playerIds.js';
 import { lookupRule } from '../ai/ruleLookup.js';
 import { buildComplaint } from '../complaint.js';
@@ -387,6 +388,8 @@ export async function handleCommand(i: ChatInputCommandInteraction): Promise<voi
       return cmdHelp(i);
     case 'clean':
       return cmdClean(i);
+    case 'импорт':
+      return cmdImport(i);
     case 'мой-id':
       return cmdPlayerIds(i);
     default:

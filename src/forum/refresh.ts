@@ -7,6 +7,7 @@ import {
   getDocument,
   linkSourceDocs,
   listSources,
+  markSourceAccess,
   markSourceFetched,
   saveDocument,
   setMeta,
@@ -21,7 +22,8 @@ import {
 import { log } from '../util/logger.js';
 import { chunkText } from './chunker.js';
 import { ForumBlockedError, PoliteFetcher } from './http.js';
-import { parseForum, parseThread, type ParsedPost, type ThreadListItem } from './parser.js';
+import { canTryForum, describeForumAccess, getForumAccess } from './access.js';
+import { parseForum, parseThread, type ParsedPost, type ParsedThread, type ThreadListItem } from './parser.js';
 import { diffRules } from './ruleDiff.js';
 import { extractRules } from './rules.js';
 import { isSensitiveLabel, sanitizeComplaintTitle, sanitizeField, sanitizeText } from './sanitize.js';
@@ -35,23 +37,33 @@ export interface RefreshReport {
   documents: number;
   errors: string[];
   ruleChanges: number;
-  /** Форум отдал страницу антибот-защиты. */
+  /** Форум ограничил доступ (защита от ботов, 403/429/503). */
   blocked: boolean;
+  /** Обновление пропущено без запросов: идёт пауза после блокировки. */
+  skipped: boolean;
   durationMs: number;
 }
 
-const fetcher = new PoliteFetcher({ userAgent: config.userAgent, delayMs: config.scrapeDelayMs });
+const fetcher = new PoliteFetcher({
+  userAgent: config.userAgent,
+  delayMs: config.scrapeDelayMs,
+  proxyUrl: config.forumProxyUrl,
+  extraHeader: config.forumExtraHeader,
+});
 /** Общий загрузчик: обновление базы и проверка жалоб идут в одной очереди с паузами. */
 export const forumFetcher = fetcher;
 
 let chain: Promise<unknown> = Promise.resolve();
 const pending = new Map<string, Promise<RefreshReport>>();
 
-/** Ставит обновление области (ID сервера или global) в общую очередь: одновременно идёт только один сбор. */
-export function refreshScope(scope: string): Promise<RefreshReport> {
+/**
+ * Ставит обновление области (ID сервера или global) в общую очередь: одновременно идёт только один сбор.
+ * force — ручное обновление: одна попытка, даже если форум сейчас в режиме «доступ ограничен».
+ */
+export function refreshScope(scope: string, opts: { force?: boolean } = {}): Promise<RefreshReport> {
   const existing = pending.get(scope);
   if (existing) return existing;
-  const p = chain.then(() => doRefresh(scope)).finally(() => pending.delete(scope));
+  const p = chain.then(() => doRefresh(scope, !!opts.force)).finally(() => pending.delete(scope));
   chain = p.catch(() => undefined);
   pending.set(scope, p);
   return p;
@@ -63,14 +75,38 @@ export function isRefreshing(scope: string): boolean {
 
 const errMsg = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-async function doRefresh(scope: string): Promise<RefreshReport> {
+async function doRefresh(scope: string, force: boolean): Promise<RefreshReport> {
   const started = Date.now();
-  const report: RefreshReport = { scope, sources: 0, threadsFetched: 0, threadsCached: 0, documents: 0, ruleChanges: 0, blocked: false, errors: [], durationMs: 0 };
+  const report: RefreshReport = {
+    scope,
+    sources: 0,
+    threadsFetched: 0,
+    threadsCached: 0,
+    documents: 0,
+    ruleChanges: 0,
+    blocked: false,
+    skipped: false,
+    errors: [],
+    durationMs: 0,
+  };
   const sources = listSources(scope);
+  // Импортированные вручную источники форум не опрашивает — они обновляются повторным импортом.
+  const remote = sources.filter((s) => s.kind !== 'manual');
   report.sources = sources.length;
-  log.info(`Обновление базы знаний [${scope}]: источников ${sources.length}`);
 
-  for (const src of sources) {
+  // Форум сейчас закрыт и время следующей попытки не пришло — даже не обращаемся к нему.
+  if (remote.length && !canTryForum(force)) {
+    const access = getForumAccess();
+    for (const s of remote) markSourceAccess(s.id, 'restricted', `Доступ ограничен: ${access.reason ?? 'защита форума'}`);
+    report.blocked = true;
+    report.skipped = true;
+    report.errors.push(describeForumAccess(access));
+    report.durationMs = Date.now() - started;
+    return report;
+  }
+  log.info(`Обновление базы знаний [${scope}]: источников ${remote.length} (+ импортировано вручную: ${sources.length - remote.length})`);
+
+  for (const [i, src] of remote.entries()) {
     try {
       if (src.kind === 'thread') {
         const doc = await indexThread(src.url, null, report, false);
@@ -88,9 +124,10 @@ async function doRefresh(scope: string): Promise<RefreshReport> {
       if (err instanceof ForumBlockedError) {
         report.blocked = true;
         report.errors.push(err.message);
-        markSourceFetched(src.id, null, 'Форум закрыт защитой от ботов');
+        // Этот и оставшиеся источники тоже не откроются — помечаем «доступ ограничен», данные не трогаем.
+        for (const s of remote.slice(i)) markSourceAccess(s.id, 'restricted', `Доступ ограничен: ${err.reason}`);
         log.warn(err.message);
-        break; // остальные источники тоже не откроются
+        break;
       }
       report.errors.push(`${src.url}: ${errMsg(err)}`);
       markSourceFetched(src.id, null, errMsg(err));
@@ -143,9 +180,38 @@ async function indexThread(
     }
   }
   report.threadsFetched++;
+  const stored = storeParsedThread(url, { ...first, posts }, { listingTs, allowNewDocEvent });
+  report.ruleChanges += stored.ruleChanges;
+  return { url, title: stored.title };
+}
+
+export interface StoreResult {
+  url: string;
+  title: string;
+  chunks: number;
+  rules: number;
+  ruleChanges: number;
+  isRules: boolean;
+}
+
+/**
+ * Сохраняет разобранную тему в базу: фрагменты, пункты правил, события изменений правил.
+ * Общая для загрузки с форума и для ручного импорта (сохранённая страница, файл, текст).
+ */
+export function storeParsedThread(
+  url: string,
+  first: ParsedThread,
+  opts: { listingTs?: number | null; allowNewDocEvent?: boolean; forceRules?: boolean } = {},
+): StoreResult {
+  const listingTs = opts.listingTs ?? null;
+  const allowNewDocEvent = !!opts.allowNewDocEvent;
+  const cached = getDocument(url);
+  const posts = first.posts;
+  let ruleChanges = 0;
 
   const complaint = isComplaintThread(first.fields, first.breadcrumbs);
-  const isRules = !complaint && (/правил/i.test(first.title) || first.breadcrumbs.some((b) => /правил/i.test(b)));
+  const isRules =
+    !complaint && (!!opts.forceRules || /правил/i.test(first.title) || first.breadcrumbs.some((b) => /правил/i.test(b)));
   const title = complaint ? sanitizeComplaintTitle(first.title) : first.title;
 
   const header: string[] = [];
@@ -189,7 +255,7 @@ async function indexThread(
       events.push({ ...base, kind: 'new_doc', point: null, before_text: null, before_punishment: null, after_text: `Пунктов правил: ${rules.length}`, after_punishment: null, post_url: url });
     }
     addRuleEvents(events);
-    report.ruleChanges += events.length;
+    ruleChanges = events.length;
   }
 
   saveDocument(
@@ -206,7 +272,7 @@ async function indexThread(
     chunks,
     rules,
   );
-  return { url, title };
+  return { url, title, chunks: chunks.length, rules: rules.length, ruleChanges, isRules };
 }
 
 async function indexForum(url: string, report: RefreshReport, allowNewDocEvent: boolean): Promise<{ title: string; urls: string[] }> {

@@ -42,7 +42,10 @@ import {
   type PermFlag,
   type AccessFlag,
   type RolePerm,
+  type SourceRow,
 } from '../db/repo.js';
+import { describeForumAccess } from '../forum/access.js';
+import { importManual } from '../forum/manualImport.js';
 import { isRefreshing, refreshScope, type RefreshReport } from '../forum/refresh.js';
 import { normalizeForumUrl } from '../forum/url.js';
 import { UserError } from '../util/errors.js';
@@ -98,6 +101,7 @@ const COMMAND_LABELS: Record<(typeof BOT_COMMANDS)[number], string> = {
 const OP_SECTION: Record<string, Section> = {
   rolesel: 'roles', rolenew: 'roles', rolenewm: 'roles', roleperm: 'roles', roleaccess: 'roles', rolecmd: 'roles', rolelim: 'roles', rolelimm: 'roles', roledel: 'roles',
   prov: 'ai', tok: 'ai', tokm: 'ai', modelsel: 'ai', modelm: 'ai', tokchk: 'ai', tokdel: 'ai',
+  impt: 'sources', imptm: 'sources', impf: 'sources', autoref: 'sources', cmpon: 'sources',
   srcadd: 'sources', srcaddm: 'sources', srcdel: 'sources', srcint: 'sources', srcintm: 'sources', srcref: 'sources',
   chan: 'channels', chanp: 'channels', chanfix: 'channels',
   faqadd: 'faq', faqaddm: 'faq', faqdel: 'faq',
@@ -308,16 +312,24 @@ async function viewAi(guild: Guild, note?: string): Promise<BaseMessageOptions> 
   };
 }
 
+/** «Доступен» / «Доступ ограничен» / «Импортирован вручную» / ошибка / ещё не загружен. */
+export function sourceStatusLabel(s: SourceRow): string {
+  const ago = s.last_fetched_at ? ` <t:${Math.floor(s.last_fetched_at / 1000)}:R>` : '';
+  if (s.kind === 'manual' || s.access === 'manual') return `📥 Импортирован вручную${ago}`;
+  if (s.access === 'restricted') return '⛔ Доступ ограничен';
+  if (s.last_error) return `⚠️ Ошибка: ${truncate(s.last_error, 50)}`;
+  if (s.last_fetched_at) return `✅ Доступен (обновлён${ago})`;
+  return '⏳ Ещё не загружен';
+}
+
+const SOURCE_KIND_ICON: Record<SourceRow['kind'], string> = { forum: '📁', thread: '📄', manual: '📥' };
+
 function viewSources(guild: Guild, note?: string): BaseMessageOptions {
   const g = ensureGuildRow(guild.id, config.defaultRefreshHours);
   const sources = listSources(guild.id);
   const list = sources
     .slice(0, 20)
-    .map((s) => {
-      const kind = s.kind === 'forum' ? '📁' : '📄';
-      const status = s.last_error ? `⚠️ ${truncate(s.last_error, 60)}` : s.last_fetched_at ? `✅ <t:${Math.floor(s.last_fetched_at / 1000)}:R>` : '⏳ ещё не загружен';
-      return `\`#${s.id}\` ${kind} [${truncate(s.title ?? s.url, 50)}](${s.url}) — ${status}`;
-    })
+    .map((s) => `\`#${s.id}\` ${SOURCE_KIND_ICON[s.kind] ?? '📄'} [${truncate(s.title ?? s.url, 50)}](${s.url}) — ${sourceStatusLabel(s)}`)
     .join('\n');
   const embed = new EmbedBuilder()
     .setColor(COLORS.info)
@@ -328,11 +340,14 @@ function viewSources(guild: Guild, note?: string): BaseMessageOptions {
         list || '_Источников нет._',
         sources.length > 20 ? `…и ещё ${sources.length - 20}` : '',
         '',
-        `🔁 Автообновление: каждые **${g.refresh_hours} ч**`,
+        `🌐 **Форум:** ${describeForumAccess()}`,
+        `🔁 Автообновление: ${g.auto_refresh ? `**вкл**, каждые **${g.refresh_hours} ч**` : '**выкл** (только ручное обновление и импорт)'}`,
         `🕒 Последнее обновление: ${formatDateTime(g.last_refresh_at)}`,
+        `🎮 Проверка жалоб на игровые ID: **${g.complaints_enabled ? 'вкл' : 'выкл'}**`,
         isRefreshing(guild.id) ? '⏳ **Идёт обновление…**' : '',
         '',
-        '📁 — раздел форума (берутся темы раздела и подразделов), 📄 — отдельная тема.',
+        '📁 — раздел форума, 📄 — тема, 📥 — импортировано вручную.',
+        '📥 **Импорт** — если форум недоступен боту: вставьте текст (кнопка «Импорт текста») или загрузите файл .txt/.html/.md командой `/импорт` (сохранённая страница форума: Ctrl+S → «Веб-страница, только HTML»). Укажите ссылку на оригинал — AI покажет её как источник.',
       ]
         .filter((l, i) => (i === 0 ? !!l : true))
         .join('\n')
@@ -344,6 +359,12 @@ function viewSources(guild: Guild, note?: string): BaseMessageOptions {
       button(`cfg:srcint:${guild.id}`, 'Интервал', ButtonStyle.Secondary, '⏱'),
       button(`cfg:srcref:${guild.id}`, 'Обновить базу знаний', ButtonStyle.Primary, '🔄'),
       back(guild.id),
+    ),
+    row(
+      button(`cfg:impt:${guild.id}`, 'Импорт текста', ButtonStyle.Success, '📥'),
+      button(`cfg:impf:${guild.id}`, 'Импорт файла', ButtonStyle.Secondary, '📎'),
+      button(`cfg:autoref:${guild.id}`, g.auto_refresh ? 'Автообновление: вкл' : 'Автообновление: выкл', g.auto_refresh ? ButtonStyle.Success : ButtonStyle.Secondary, '🔁'),
+      button(`cfg:cmpon:${guild.id}`, g.complaints_enabled ? 'Жалобы: вкл' : 'Жалобы: выкл', g.complaints_enabled ? ButtonStyle.Success : ButtonStyle.Secondary, '🎮'),
     ),
   ];
   if (sources.length) {
@@ -467,6 +488,18 @@ function viewStatus(guild: Guild): BaseMessageOptions {
         value: `${provider?.label ?? 'провайдер не выбран'} · ${g.ai_model || provider?.defaultModel || '—'} · токен ${g.ai_token ? 'задан' : 'не задан'}`,
       },
       { name: '💬 Запросов к AI', value: `всего: **${ai.total}** · за 24 ч: **${ai.day}** · ошибок: **${ai.failed}**` },
+      { name: '🌐 Форум', value: truncate(describeForumAccess(), 1024) },
+      {
+        name: '📚 Состояние источников',
+        value:
+          truncate(
+            listSources(guild.id)
+              .slice(0, 12)
+              .map((s) => `${SOURCE_KIND_ICON[s.kind] ?? '📄'} ${truncate(s.title ?? s.url, 40)} — ${sourceStatusLabel(s)}`)
+              .join('\n'),
+            1024,
+          ) || 'нет источников',
+      },
     );
   return {
     embeds: [embed],
@@ -691,10 +724,21 @@ export function describeReport(r: RefreshReport): string {
   return lines.join('\n');
 }
 
-export function startRefresh(client: Client, guildId: string, initiator: string | null, notify?: (text: string) => Promise<unknown>): void {
-  refreshScope(guildId)
+export function startRefresh(
+  client: Client,
+  guildId: string,
+  initiator: string | null,
+  notify?: (text: string) => Promise<unknown>,
+  force = false,
+): void {
+  refreshScope(guildId, { force })
     .then(async (report) => {
       const text = describeReport(report);
+      if (report.skipped) {
+        // Пауза после блокировки — к форуму не обращались, в #ai-логи не пишем.
+        await notify?.(`⛔ Форум сейчас недоступен боту, обновление пропущено.\n${text}`).catch(() => undefined);
+        return;
+      }
       await logToGuild(
         client,
         guildId,
@@ -987,13 +1031,73 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
       await updateOrReply(i, viewSources(guild, `✅ Автообновление каждые ${n} ч.`));
       return;
     }
+    case 'impt': {
+      if (!i.isButton()) return;
+      await i.showModal(
+        modal(`cfg:imptm:${guildId}`, 'Импорт текста в базу знаний', [
+          textInput('url', 'Ссылка на оригинал (тема форума)', { max: 300, placeholder: `${config.forumBaseUrl}/threads/406242/` }),
+          textInput('title', 'Название (необязательно)', { required: false, max: 150, placeholder: 'Общие правила проекта — раздел 4' }),
+          textInput('text', 'Текст (до 4000 символов)', {
+            style: TextInputStyle.Paragraph,
+            max: 4000,
+            placeholder: '4.1 DeathMatch (DM) — убийство без IC причины. | JAIL до 120 минут\n4.2 …',
+          }),
+        ]),
+      );
+      return;
+    }
+    case 'imptm': {
+      if (!i.isModalSubmit()) return;
+      // Импорт выполняется синхронно и быстро; ошибки (неверная ссылка, пустой текст) покажутся отдельным сообщением.
+      const res = importManual({
+        scope: guildId,
+        url: i.fields.getTextInputValue('url'),
+        title: i.fields.getTextInputValue('title').trim() || null,
+        content: i.fields.getTextInputValue('text'),
+        format: 'text',
+        userId: uid,
+      });
+      await audit(client, guildId, uid, 'Импорт текста', `${res.title} — ${res.url} (пунктов правил: ${res.rules}, изменений: ${res.ruleChanges})`);
+      if (res.ruleChanges) await dispatchRuleUpdates(client).catch(() => undefined);
+      await updateOrReply(
+        i,
+        viewSources(
+          guild,
+          `✅ Импортировано: **${truncate(res.title, 80)}** — фрагментов ${res.chunks}, пунктов правил ${res.rules}${res.ruleChanges ? `, изменений в правилах ${res.ruleChanges} (→ #ai-правила)` : ''}.\nТекст длиннее 4000 символов загрузите файлом: \`/импорт\`.`,
+        ),
+      );
+      return;
+    }
+    case 'impf': {
+      await updateOrReply(
+        i,
+        viewSources(
+          guild,
+          '📎 **Импорт файла:** используйте команду `/импорт файл:<файл> ссылка:<ссылка на тему>`.\n' +
+            'Подходит .txt, .md или сохранённая страница форума .html (в браузере: Ctrl+S → «Веб-страница, только HTML»). ' +
+            'Сохранённая страница разбирается так же, как при загрузке с форума: сообщения, пункты правил, наказания.',
+        ),
+      );
+      return;
+    }
+    case 'autoref':
+    case 'cmpon': {
+      const g = ensureGuildRow(guildId, config.defaultRefreshHours);
+      const col = op === 'autoref' ? 'auto_refresh' : 'complaints_enabled';
+      const next = g[col] ? 0 : 1;
+      updateGuild(guildId, { [col]: next });
+      await audit(client, guildId, uid, op === 'autoref' ? 'Автообновление базы' : 'Проверка жалоб на игровые ID', next ? 'вкл' : 'выкл');
+      await updateOrReply(i, viewSources(guild, '✅ Сохранено.'));
+      return;
+    }
     case 'srcref': {
       if (isRefreshing(guildId)) {
         await updateOrReply(i, viewSources(guild, '⏳ Обновление уже идёт.'));
         return;
       }
       await audit(client, guildId, uid, 'Запущено обновление базы знаний');
-      startRefresh(client, guildId, uid, (text) => i.followUp({ content: text, flags: ephemeralIfGuild(i) }));
+      // Ручное обновление — одна попытка даже во время паузы после блокировки (проверить, не открыли ли доступ).
+      startRefresh(client, guildId, uid, (text) => i.followUp({ content: text, flags: ephemeralIfGuild(i) }), true);
       await updateOrReply(i, viewSources(guild, '🔄 Обновление запущено. Это может занять несколько минут (бот делает паузы между запросами к форуму).'));
       return;
     }
