@@ -3,7 +3,7 @@ module.exports = {
   apps: [
     {
       name: 'nova-rp-ai',
-      script: 'dist/src/index.js',
+      script: 'index.js',
       cwd: __dirname,
       autorestart: true,
       max_restarts: 50,
