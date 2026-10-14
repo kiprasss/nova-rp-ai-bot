@@ -3,6 +3,7 @@ import { syncCommands } from './commands/sync.js';
 import { assertRuntimeConfig, config } from './config.js';
 import { initSecretKey } from './crypto.js';
 import { openDatabase } from './db/database.js';
+import { importSeedIfEmpty } from './kbSeed.js';
 import { onInteraction, onMessage } from './discord/router.js';
 import { seedGlobalSources, startScheduler } from './scheduler.js';
 import { log, setLogLevel } from './util/logger.js';
@@ -11,6 +12,7 @@ setLogLevel(config.logLevel);
 assertRuntimeConfig();
 initSecretKey(config.encryptionKey);
 openDatabase(config.databasePath);
+importSeedIfEmpty();
 seedGlobalSources();
 
 const client = new Client({
