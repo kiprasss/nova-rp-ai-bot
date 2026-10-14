@@ -3,7 +3,6 @@ import { DEFAULT_SOURCES, config } from './config.js';
 import { GLOBAL_SCOPE, addSource, countPlayerIds, getMeta, listGuilds, listSources } from './db/repo.js';
 import { dispatchComplaintAlerts } from './discord/complaintAlerts.js';
 import { dispatchRuleUpdates } from './discord/ruleUpdates.js';
-import { canTryForum } from './forum/access.js';
 import { watchComplaints } from './forum/complaintWatch.js';
 import { startRefresh } from './discord/settingsMenu.js';
 import { isRefreshing, refreshScope } from './forum/refresh.js';
@@ -26,12 +25,10 @@ function tick(client: Client): void {
   for (const g of listGuilds()) {
     if (!client.guilds.cache.has(g.guild_id) || isRefreshing(g.guild_id)) continue;
     if (!listSources(g.guild_id).length) continue;
-    if (g.auto_refresh === 0) continue; // автообновление выключено в «Источниках»
     const due = !g.last_refresh_at || now - g.last_refresh_at >= g.refresh_hours * 3600_000;
-    // Пока форум закрыт и пауза не прошла, обновление не запускаем (без лишних сообщений в #ai-логи).
-    if (due && canTryForum()) startRefresh(client, g.guild_id, null);
+    if (due) startRefresh(client, g.guild_id, null);
   }
-  if (config.seedGlobalSources && listSources(GLOBAL_SCOPE).length && !isRefreshing(GLOBAL_SCOPE) && canTryForum()) {
+  if (config.seedGlobalSources && listSources(GLOBAL_SCOPE).length && !isRefreshing(GLOBAL_SCOPE)) {
     const last = Number(getMeta('global_last_refresh') ?? 0);
     if (now - last >= config.defaultRefreshHours * 3600_000) {
       refreshScope(GLOBAL_SCOPE)
@@ -43,8 +40,7 @@ function tick(client: Client): void {
 
 /** Жалобы проверяем, только если есть кого уведомлять: привязанные ID или настроенный канал #ai-жалобы. */
 async function complaintTick(client: Client): Promise<void> {
-  const guilds = listGuilds().filter((g) => g.complaints_enabled !== 0);
-  const needed = guilds.length > 0 && (countPlayerIds() > 0 || guilds.some((g) => g.complaints_channel_id));
+  const needed = countPlayerIds() > 0 || listGuilds().some((g) => g.complaints_channel_id);
   if (!needed) return;
   try {
     await watchComplaints();

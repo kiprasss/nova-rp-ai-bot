@@ -60,7 +60,7 @@ export async function dispatchComplaintAlerts(client: Client): Promise<void> {
     const maxId = maxComplaintEventId();
     for (const g of listGuilds()) {
       if (g.last_complaint_event_id >= maxId) continue;
-      const guild = g.complaints_enabled === 0 ? undefined : client.guilds.cache.get(g.guild_id);
+      const guild = client.guilds.cache.get(g.guild_id);
       const events = complaintEventsBetween(g.last_complaint_event_id, maxId);
       if (guild && g.complaints_channel_id && events.length) {
         const channel = await guild.channels.fetch(g.complaints_channel_id).catch(() => null);

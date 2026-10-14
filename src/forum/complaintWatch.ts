@@ -7,7 +7,6 @@ import {
   saveComplaintThread,
 } from '../db/repo.js';
 import { log } from '../util/logger.js';
-import { canTryForum } from './access.js';
 import { ForumBlockedError } from './http.js';
 import { parseForum, parseThread, type ThreadField, type ThreadListItem } from './parser.js';
 import { forumFetcher } from './refresh.js';
@@ -46,8 +45,6 @@ export interface WatchResult {
   events: number;
   scanned: number;
   blocked: boolean;
-  /** Проверка пропущена без запросов: идёт пауза после блокировки форума. */
-  skipped: boolean;
 }
 
 let running = false;
@@ -63,14 +60,8 @@ export function lastComplaintCheckAt(): number {
  * без уведомлений; уже существующие жалобы на ID показываются при его привязке.
  */
 export async function watchComplaints(opts: { deep?: boolean } = {}): Promise<WatchResult> {
-  const result: WatchResult = { events: 0, scanned: 0, blocked: false, skipped: false };
+  const result: WatchResult = { events: 0, scanned: 0, blocked: false };
   if (running) return result;
-  // Форум закрыт и пауза ещё не прошла — не делаем ни одного запроса.
-  if (!canTryForum()) {
-    result.blocked = true;
-    result.skipped = true;
-    return result;
-  }
   running = true;
   try {
     const baseline = countComplaintThreads() === 0;

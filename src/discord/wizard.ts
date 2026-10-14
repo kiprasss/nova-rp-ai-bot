@@ -14,7 +14,6 @@ import {
   updateGuild,
   upsertRolePerm,
 } from '../db/repo.js';
-import { getForumAccess } from '../forum/access.js';
 import { normalizeForumUrl } from '../forum/url.js';
 import { applySetup, inspectSetup, syncAllRoleAccess } from './setupGuild.js';
 
@@ -139,10 +138,10 @@ export async function analyzeGuild(client: Client, guild: Guild): Promise<Wizard
       : { ok: true, text: `Источники: ${sources.length}, рекомендуемые добавлены` },
   );
 
-  if (getForumAccess().blocked || sources.some((s) => s.access === 'restricted')) {
-    plan.checks.push({ ok: false, text: 'Форум ограничил доступ боту — обновление базы и проверка жалоб временно не работают' });
+  if (sources.some((s) => s.last_error?.includes('защитой'))) {
+    plan.checks.push({ ok: false, text: 'Форум закрыт защитой от ботов — обновление базы и проверка жалоб временно не работают' });
     plan.manual.push(
-      'Пока форум не добавил бота в белый список, загружайте знания вручную: «Источники» → «Импорт текста» или /импорт (сохранённая страница). Настройки для белого списка — в .env: SCRAPER_USER_AGENT, FORUM_EXTRA_HEADER, FORUM_PROXY_URL.',
+      'Попросите администрацию форума forum.grand-rp.su добавить бота в белый список (User-Agent из .env, IP сервера бота). До этого бот отвечает по уже собранной базе.',
     );
   }
 

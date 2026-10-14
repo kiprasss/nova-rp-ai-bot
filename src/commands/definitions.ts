@@ -88,18 +88,6 @@ export const commandDefinitions: RESTPostAPIChatInputApplicationCommandsJSONBody
     .toJSON(),
 
   new SlashCommandBuilder()
-    .setName('импорт')
-    .setDescription('Загрузить знания из файла (.txt/.md или сохранённая страница форума .html)')
-    .addAttachmentOption((o) => o.setName('файл').setDescription('Файл .txt, .md, .html (до 3 МБ)').setRequired(true))
-    .addStringOption((o) =>
-      o.setName('ссылка').setDescription('Ссылка на оригинал на форуме — AI покажет её как источник').setRequired(true).setMaxLength(300),
-    )
-    .addStringOption((o) => o.setName('название').setDescription('Название (необязательно)').setMaxLength(150))
-    .setContexts(InteractionContextType.Guild)
-    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
-    .toJSON(),
-
-  new SlashCommandBuilder()
     .setName('clean')
     .setDescription('Удалить сообщения бота в канале или в ЛС (меню и важное не трогает)')
     .addChannelOption((o) =>

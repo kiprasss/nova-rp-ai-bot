@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { secrets } from '../crypto.js';
-import { countDocuments, getGuild, getUserSettings, listFaq, recordAiRequest } from '../db/repo.js';
+import { getGuild, getUserSettings, listFaq, recordAiRequest } from '../db/repo.js';
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
@@ -77,9 +77,6 @@ const NO_DATA =
   'Я отвечаю только на вопросы о проекте NOVA RP — правилах, наказаниях, жалобах и процедурах. ' +
   'Попробуйте переформулировать вопрос или загляните на форум: <https://forum.grand-rp.su>';
 
-/** База ещё не собрана и ничего не импортировано — честно говорим об этом, а не выдумываем. */
-export const EMPTY_KB = '📭 База знаний пока пуста, администратор ещё не добавил данные.';
-
 const MAX_MESSAGE = 1950;
 
 export async function answerQuestion(input: AskInput): Promise<AskResult> {
@@ -136,7 +133,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   for (const h of hits) {
     fragments.push({ n: fragments.length + 1, title: h.chunk.title, url: h.chunk.post_url, text: h.chunk.text });
   }
-  if (!fragments.length) return { kind: 'nodata', text: countDocuments() === 0 ? EMPTY_KB : NO_DATA };
+  if (!fragments.length) return { kind: 'nodata', text: NO_DATA };
 
   if (!creds) {
     return {

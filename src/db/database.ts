@@ -201,16 +201,10 @@ function migrate(d: DatabaseSync): void {
       ['ai_threads', 'INTEGER NOT NULL DEFAULT 0'],
       ['ai_show_model', 'INTEGER NOT NULL DEFAULT 0'],
       ['ai_faq_first', 'INTEGER NOT NULL DEFAULT 1'],
-      ['auto_refresh', 'INTEGER NOT NULL DEFAULT 1'],
-      ['complaints_enabled', 'INTEGER NOT NULL DEFAULT 1'],
       ['complaints_channel_id', 'TEXT'],
       ['last_complaint_event_id', 'INTEGER NOT NULL DEFAULT 0'],
     ],
     user_settings: [['complaint_dm', 'INTEGER NOT NULL DEFAULT 1']],
-    sources: [
-      // ok — доступен, restricted — доступ ограничен (защита форума), manual — импортирован вручную, error — ошибка
-      ['access', 'TEXT'],
-    ],
     complaint_threads: [
       ['author', 'TEXT'],
       ['offender_nick', 'TEXT'],

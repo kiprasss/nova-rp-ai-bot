@@ -29,10 +29,6 @@ export interface GuildRow {
   ai_faq_first: number;
   complaints_channel_id: string | null;
   last_complaint_event_id: number;
-  /** Автообновление базы с форума по расписанию. */
-  auto_refresh: number;
-  /** Проверка жалоб на привязанные игровые ID для этого сервера. */
-  complaints_enabled: number;
   settings_message_id: string | null;
   ai_provider: string | null;
   ai_model: string | null;
@@ -97,17 +93,13 @@ export interface SourceRow {
   id: number;
   scope: string;
   url: string;
-  /** manual — импортирован вручную (текст или файл), форум не опрашивается. */
-  kind: 'thread' | 'forum' | 'manual';
+  kind: 'thread' | 'forum';
   title: string | null;
   added_by: string | null;
   added_at: number;
   last_fetched_at: number | null;
   last_error: string | null;
-  access: SourceAccess | null;
 }
-
-export type SourceAccess = 'ok' | 'restricted' | 'manual' | 'error';
 
 export interface DocumentRow {
   url: string;
@@ -276,38 +268,12 @@ export function deleteSource(id: number): void {
 
 export function markSourceFetched(id: number, title: string | null, error: string | null): void {
   run(
-    'UPDATE sources SET last_fetched_at = ?, title = COALESCE(?, title), last_error = ?, access = ? WHERE id = ?',
+    'UPDATE sources SET last_fetched_at = ?, title = COALESCE(?, title), last_error = ? WHERE id = ?',
     Date.now(),
     title,
     error,
-    error ? 'error' : 'ok',
     id,
   );
-}
-
-/** Отметить доступ к источнику, не меняя время последней успешной загрузки. */
-export function markSourceAccess(id: number, access: SourceAccess, error: string | null): void {
-  run('UPDATE sources SET access = ?, last_error = ? WHERE id = ?', access, error, id);
-}
-
-/** Ручной импорт: источник kind=manual, привязан к документу. */
-export function upsertManualSource(scope: string, url: string, title: string, addedBy: string): SourceRow {
-  run(
-    `INSERT INTO sources (scope, url, kind, title, added_by, added_at, last_fetched_at, access) VALUES (?, ?, 'manual', ?, ?, ?, ?, 'manual')
-     ON CONFLICT(scope, url) DO UPDATE SET title = excluded.title, last_fetched_at = excluded.last_fetched_at,
-       last_error = NULL, access = CASE WHEN sources.kind = 'manual' THEN 'manual' ELSE sources.access END`,
-    scope,
-    url,
-    title,
-    addedBy,
-    Date.now(),
-    Date.now(),
-  );
-  return get<SourceRow>('SELECT * FROM sources WHERE scope = ? AND url = ?', scope, url)!;
-}
-
-export function countDocuments(): number {
-  return get<{ n: number }>('SELECT COUNT(*) AS n FROM documents')?.n ?? 0;
 }
 
 export function linkSourceDocs(sourceId: number, docUrls: string[]): void {

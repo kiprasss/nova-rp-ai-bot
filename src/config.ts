@@ -48,9 +48,6 @@ export const config = {
   databasePath: str('DATABASE_PATH', './data/bot.db'),
 
   forumBaseUrl: str('FORUM_BASE_URL', 'https://forum.grand-rp.su').replace(/\/+$/, ''),
-  // Белый список форума: User-Agent, доп. заголовок/ключ и прокси — только то, что согласовано с администрацией форума.
-  forumProxyUrl: str('FORUM_PROXY_URL') || null,
-  forumExtraHeader: str('FORUM_EXTRA_HEADER') || null,
   userAgent: str('SCRAPER_USER_AGENT', 'NovaRP-AI-Bot/1.0 (Discord bot; polite scraper)'),
   scrapeDelayMs: int('SCRAPE_DELAY_MS', 2500),
   scrapeMaxThreadsPerSource: int('SCRAPE_MAX_THREADS_PER_SOURCE', 60),
