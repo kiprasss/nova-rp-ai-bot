@@ -102,6 +102,8 @@ const OP_SECTION: Record<string, Section> = {
   chan: 'channels', chanp: 'channels', chanfix: 'channels',
   faqadd: 'faq', faqaddm: 'faq', faqdel: 'faq',
   ailen: 'aiset', aitemp: 'aiset', aictx: 'aiset', airew: 'aiset', aisrc: 'aiset', aiinst: 'aiset', aiinstm: 'aiset',
+  aipage2: 'aiset', aitone: 'aiset', aimax: 'aiset', aifb: 'aiset',
+  aicmp: 'aiset', aiauto: 'aiset', aithr: 'aiset', aimdl: 'aiset', aifaq: 'aiset',
   wizapply: 'wizard',
 };
 
@@ -529,8 +531,87 @@ function viewAiSettings(guild: Guild, note?: string): BaseMessageOptions {
         button(`cfg:airew:${guild.id}`, g.ai_rewrite ? 'Умный поиск: вкл' : 'Умный поиск: выкл', g.ai_rewrite ? ButtonStyle.Success : ButtonStyle.Secondary, '🔍'),
         button(`cfg:aisrc:${guild.id}`, g.ai_show_sources ? 'Источники: вкл' : 'Источники: выкл', g.ai_show_sources ? ButtonStyle.Success : ButtonStyle.Secondary, '🔗'),
         button(`cfg:aiinst:${guild.id}`, 'Свои инструкции', ButtonStyle.Primary, '📝'),
+        button(`cfg:aipage2:${guild.id}`, 'Ещё настройки', ButtonStyle.Primary, '➡️'),
         back(guild.id),
       ),
+    ],
+  };
+}
+
+const TONES: { value: 'neutral' | 'official' | 'friendly' | 'strict'; label: string; description: string; emoji: string }[] = [
+  { value: 'neutral', label: 'Нейтральный', description: 'По умолчанию', emoji: '😐' },
+  { value: 'official', label: 'Официальный', description: 'На «вы», как администрация проекта', emoji: '🎩' },
+  { value: 'friendly', label: 'Дружелюбный', description: 'Проще, можно на «ты», немного эмодзи', emoji: '😊' },
+  { value: 'strict', label: 'Строгий', description: 'Только ответ, пункт и наказание', emoji: '📏' },
+];
+
+const MAX_TOKENS: { value: string; label: string; tokens: number | null }[] = [
+  { value: 'auto', label: 'Авто (по длине ответа)', tokens: null },
+  { value: '300', label: '300 токенов — очень коротко', tokens: 300 },
+  { value: '600', label: '600 токенов', tokens: 600 },
+  { value: '1000', label: '1000 токенов', tokens: 1000 },
+  { value: '1500', label: '1500 токенов — максимум подробностей', tokens: 1500 },
+];
+
+/** Вторая страница «Настройки AI»: тон, лимит токенов, резервная модель, поведение в Discord. */
+async function viewAiSettings2(guild: Guild, note?: string): Promise<BaseMessageOptions> {
+  const g = ensureGuildRow(guild.id, config.defaultRefreshHours);
+  const provider = isProviderId(g.ai_provider) ? PROVIDERS[g.ai_provider] : null;
+  const tone = TONES.find((t) => t.value === g.ai_tone) ?? TONES[0];
+  const maxTok = MAX_TOKENS.find((m) => m.tokens === g.ai_max_tokens) ?? MAX_TOKENS[0];
+  const onOff = (v: number) => (v ? 'вкл' : 'выкл');
+  const embed = new EmbedBuilder()
+    .setColor(COLORS.info)
+    .setTitle('🧠 Настройки AI — ещё')
+    .setDescription(
+      [
+        note ? `${note}\n` : '',
+        `🎭 **Тон ответов:** ${tone.label}`,
+        `🔢 **Лимит длины ответа:** ${maxTok.label}`,
+        `🛟 **Резервная модель:** ${g.ai_fallback_model ?? 'нет'} _(используется, если основная модель недоступна или упёрлась в лимит)_`,
+        '',
+        `📂 **Искать и в жалобах:** ${onOff(g.ai_search_complaints)} _(выкл — только правила, меньше «шума»)_`,
+        `💬 **Автоответ в #ai-помощник:** ${onOff(g.ai_auto_reply)} _(выкл — только /вопрос и упоминание бота)_`,
+        `🧵 **Ответ в отдельной ветке:** ${onOff(g.ai_threads)} _(канал остаётся чистым)_`,
+        `🤖 **Подпись с моделью:** ${onOff(g.ai_show_model)}`,
+        `📌 **FAQ раньше AI:** ${onOff(g.ai_faq_first)}`,
+      ]
+        .filter((l, i) => i !== 0 || l)
+        .join('\n'),
+    );
+  const toneSel = new StringSelectMenuBuilder()
+    .setCustomId(`cfg:aitone:${guild.id}`)
+    .addOptions(TONES.map((t) => ({ label: t.label, value: t.value, description: t.description, emoji: t.emoji, default: t === tone })));
+  const maxSel = new StringSelectMenuBuilder()
+    .setCustomId(`cfg:aimax:${guild.id}`)
+    .addOptions(MAX_TOKENS.map((m) => ({ label: m.label, value: m.value, default: m === maxTok })));
+  const live = provider ? await liveModels(provider, g.ai_token) : null;
+  const models = [...new Set([...(g.ai_fallback_model ? [g.ai_fallback_model] : []), ...(live ?? provider?.models ?? [])])].slice(0, 23);
+  const fbSel = new StringSelectMenuBuilder()
+    .setCustomId(`cfg:aifb:${guild.id}`)
+    .setPlaceholder('Резервная модель…')
+    .addOptions(
+      { label: 'Без резервной модели', value: '__none', emoji: '🚫', default: !g.ai_fallback_model },
+      ...(models.length
+        ? models.map((m) => ({ label: truncate(m, 100), value: m, default: m === g.ai_fallback_model }))
+        : [{ label: 'Сначала выберите провайдера', value: '__none2' }]),
+    );
+  const toggle = (op: string, label: string, v: number, emoji: string) =>
+    button(`cfg:${op}:${guild.id}`, label, v ? ButtonStyle.Success : ButtonStyle.Secondary, emoji);
+  return {
+    embeds: [embed],
+    components: [
+      row(toneSel),
+      row(maxSel),
+      row(fbSel),
+      row(
+        toggle('aicmp', 'Жалобы в поиске', g.ai_search_complaints, '📂'),
+        toggle('aiauto', 'Автоответ', g.ai_auto_reply, '💬'),
+        toggle('aithr', 'Ветки', g.ai_threads, '🧵'),
+        toggle('aimdl', 'Подпись модели', g.ai_show_model, '🤖'),
+        toggle('aifaq', 'FAQ первым', g.ai_faq_first, '📌'),
+      ),
+      row(button(`cfg:open:${guild.id}:aiset`, 'Основные настройки AI', ButtonStyle.Secondary, '⬅️'), back(guild.id)),
     ],
   };
 }
@@ -1000,6 +1081,50 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
           }),
         ]),
       );
+      return;
+    }
+    case 'aipage2': {
+      if (i.isButton()) await i.deferUpdate(); // список моделей запрашивается у провайдера
+      await updateOrReply(i, await viewAiSettings2(guild));
+      return;
+    }
+    case 'aitone':
+    case 'aimax':
+    case 'aifb': {
+      if (!i.isStringSelectMenu()) return;
+      const v = i.values[0];
+      let details: string;
+      if (op === 'aitone') {
+        const t = TONES.find((x) => x.value === v) ?? TONES[0];
+        updateGuild(guildId, { ai_tone: t.value });
+        details = `тон: ${t.label}`;
+      } else if (op === 'aimax') {
+        const m = MAX_TOKENS.find((x) => x.value === v) ?? MAX_TOKENS[0];
+        updateGuild(guildId, { ai_max_tokens: m.tokens });
+        details = `лимит ответа: ${m.label}`;
+      } else {
+        const model = v.startsWith('__none') ? null : v;
+        updateGuild(guildId, { ai_fallback_model: model });
+        details = `резервная модель: ${model ?? 'нет'}`;
+      }
+      await i.deferUpdate();
+      await audit(client, guildId, uid, 'Изменены настройки AI', details);
+      await updateOrReply(i, await viewAiSettings2(guild, '✅ Сохранено.'));
+      return;
+    }
+    case 'aicmp':
+    case 'aiauto':
+    case 'aithr':
+    case 'aimdl':
+    case 'aifaq': {
+      const col = ({ aicmp: 'ai_search_complaints', aiauto: 'ai_auto_reply', aithr: 'ai_threads', aimdl: 'ai_show_model', aifaq: 'ai_faq_first' } as const)[op];
+      const label = { aicmp: 'жалобы в поиске', aiauto: 'автоответ в #ai-помощник', aithr: 'ответ в ветке', aimdl: 'подпись модели', aifaq: 'FAQ первым' }[op];
+      const g = ensureGuildRow(guildId, config.defaultRefreshHours);
+      const next = g[col] ? 0 : 1;
+      updateGuild(guildId, { [col]: next });
+      if (i.isButton()) await i.deferUpdate();
+      await audit(client, guildId, uid, 'Изменены настройки AI', `${label}: ${next ? 'вкл' : 'выкл'}`);
+      await updateOrReply(i, await viewAiSettings2(guild, '✅ Сохранено.'));
       return;
     }
     case 'aiinstm': {

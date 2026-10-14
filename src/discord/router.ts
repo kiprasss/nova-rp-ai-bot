@@ -1,4 +1,6 @@
-import { DiscordAPIError, type Client, type Interaction, type Message } from 'discord.js';
+import { ChannelType, DiscordAPIError, type Client, type Interaction, type Message } from 'discord.js';
+import { getGuild } from '../db/repo.js';
+import { truncate } from '../util/text.js';
 import { onCleanButton } from '../commands/clean.js';
 import { handleAutocomplete, handleCommand, onComplaintModal, onFaqSelect, onSetupButton } from '../commands/handlers.js';
 import { UserError, errorDetails } from '../util/errors.js';
@@ -79,9 +81,11 @@ export async function onMessage(client: Client, message: Message): Promise<void>
       return;
     }
 
+    const g = getGuild(message.guildId);
     const isAssistant = message.channelId === channelIdFor(message.guildId, 'assistant');
     const mentioned = client.user ? message.mentions.users.has(client.user.id) : false;
-    if (!isAssistant && !mentioned) return;
+    // «Автоответ» выключен — в #ai-помощник бот отвечает только на упоминание (и на /вопрос).
+    if (!mentioned && (!isAssistant || g?.ai_auto_reply === 0)) return;
     const question = content.replace(/<@!?\d+>/g, '').trim();
     if (question.length < 3) return;
 
@@ -93,6 +97,18 @@ export async function onMessage(client: Client, message: Message): Promise<void>
         setTimeout(() => reply.delete().catch(() => undefined), 15_000);
       }
       return;
+    }
+    // «Ответ в ветке»: под каждым вопросом создаётся ветка — основной канал остаётся чистым.
+    if (g?.ai_threads === 1 && message.channel.type === ChannelType.GuildText) {
+      const thread = await message
+        .startThread({ name: truncate(question.replace(/\s+/g, ' '), 90), autoArchiveDuration: 60 })
+        .catch(() => null);
+      if (thread) {
+        await thread.sendTyping().catch(() => undefined);
+        const res = await askSafely(client, gate.guildId, message.author.id, question);
+        await thread.send({ content: res.text, allowedMentions: { parse: [] } });
+        return;
+      }
     }
     await message.channel.sendTyping().catch(() => undefined);
     const res = await askSafely(client, gate.guildId, message.author.id, question);

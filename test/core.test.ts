@@ -55,6 +55,7 @@ describe('search', () => {
     text,
     title,
     is_rules: isRules,
+    is_complaint: 0,
   });
 
   it('BM25 находит релевантный фрагмент', () => {

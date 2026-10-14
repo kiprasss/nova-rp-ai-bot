@@ -85,7 +85,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   // Настройки AI сервера (в ЛС с личным токеном — значения по умолчанию).
   const ai = aiSettingsFor(input.guildId);
 
-  if (input.guildId) {
+  if (input.guildId && ai.faqFirst) {
     const faq = matchFaq(question, listFaq(input.guildId));
     if (faq) return { kind: 'faq', text: truncate(`📌 **${faq.question}**\n${faq.answer}`, MAX_MESSAGE) };
   }
@@ -124,7 +124,10 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     }
   }
   const hits = mergeHits(
-    [searchKnowledge(question, input.guildId, ai.contextSize + 2), rewritten ? searchKnowledge(rewritten, input.guildId, ai.contextSize + 2) : []],
+    [
+      searchKnowledge(question, input.guildId, ai.contextSize + 2, 1.5, !ai.searchComplaints),
+      rewritten ? searchKnowledge(rewritten, input.guildId, ai.contextSize + 2, 1.5, !ai.searchComplaints) : [],
+    ],
     ai.contextSize,
   );
   for (const h of hits) {
@@ -143,20 +146,33 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   }
 
   const length = settings.answer_length === 'auto' ? ai.answerLength : settings.answer_length === 'long' ? 'long' : 'short';
+  const extra = [TONE_PROMPTS[ai.tone], ai.instructions].filter(Boolean).join('\n') || null;
   let answer: string;
+  let usedModel = creds.model;
   try {
-    const prompt = buildPrompt(promptStyleFor(creds.provider, creds.model), length, question, fragments, ai.instructions);
-    answer = await complete(creds.provider, creds.token, creds.model, {
+    const prompt = buildPrompt(promptStyleFor(creds.provider, creds.model), length, question, fragments, extra);
+    const request = {
       system: prompt.system,
       user: prompt.user,
       temperature: ai.temperature ?? prompt.temperature,
-      maxTokens: length === 'long' ? 900 : 400,
-    });
+      maxTokens: ai.maxTokens ?? (length === 'long' ? 900 : 400),
+    };
+    try {
+      answer = await complete(creds.provider, creds.token, creds.model, request);
+    } catch (err) {
+      // Резервная модель: при лимитах, недоступности или удалённой модели пробуем вторую.
+      const retryable = err instanceof AiError && (err.status === 0 || err.status === 404 || err.status === 429 || err.status >= 500);
+      if (!retryable || !ai.fallbackModel || ai.fallbackModel === creds.model) throw err;
+      log.warn(`Основная модель ${creds.model} не ответила (${(err as AiError).status}), пробую резервную ${ai.fallbackModel}`);
+      usedModel = ai.fallbackModel;
+      answer = await complete(creds.provider, creds.token, ai.fallbackModel, request);
+    }
     recordAiRequest(input.guildId, input.userId, 'ask', true);
   } catch (err) {
     recordAiRequest(input.guildId, input.userId, 'ask', false);
     throw err;
   }
+  const modelNote = ai.showModel ? `\n-# 🤖 ${PROVIDERS[creds.provider].label} · ${usedModel}` : '';
 
   let sources = '';
   if (settings.show_sources && ai.showSources) {
@@ -171,7 +187,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     answer = answer.replace(/\s?\[\d{1,2}\]/g, '');
   }
 
-  return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length) + sources };
+  return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote };
 }
 
 export interface GuildAiSettings {
@@ -181,7 +197,21 @@ export interface GuildAiSettings {
   showSources: boolean;
   contextSize: number;
   instructions: string | null;
+  tone: 'neutral' | 'official' | 'friendly' | 'strict';
+  maxTokens: number | null;
+  fallbackModel: string | null;
+  searchComplaints: boolean;
+  showModel: boolean;
+  faqFirst: boolean;
 }
+
+/** Стиль общения бота (меню «Настройки AI» → «Тон»). */
+export const TONE_PROMPTS: Record<GuildAiSettings['tone'], string> = {
+  neutral: '',
+  official: 'Тон: официальный и вежливый, обращайся на «вы», как сотрудник администрации проекта.',
+  friendly: 'Тон: дружелюбный и простой, можно на «ты», допускается 1–2 уместных эмодзи.',
+  strict: 'Тон: максимально сухо и по делу — только ответ, пункт правил и наказание, без пояснений сверх необходимого.',
+};
 
 export function aiSettingsFor(guildId: string | null): GuildAiSettings {
   const g = guildId ? getGuild(guildId) : undefined;
@@ -192,6 +222,12 @@ export function aiSettingsFor(guildId: string | null): GuildAiSettings {
     showSources: (g?.ai_show_sources ?? 1) === 1,
     contextSize: Math.min(Math.max(g?.ai_context_size ?? 6, 2), 12),
     instructions: g?.ai_instructions?.trim() || null,
+    tone: g?.ai_tone && g.ai_tone in TONE_PROMPTS ? g.ai_tone : 'neutral',
+    maxTokens: g?.ai_max_tokens ?? null,
+    fallbackModel: g?.ai_fallback_model?.trim() || null,
+    searchComplaints: (g?.ai_search_complaints ?? 1) === 1,
+    showModel: (g?.ai_show_model ?? 0) === 1,
+    faqFirst: (g?.ai_faq_first ?? 1) === 1,
   };
 }
 

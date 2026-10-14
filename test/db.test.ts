@@ -23,6 +23,7 @@ import {
   ruleEventsBetween,
 } from '../src/db/repo.js';
 import { buildRuleUpdateEmbeds } from '../src/discord/ruleUpdates.js';
+import { TONE_PROMPTS, aiSettingsFor } from '../src/ai/answer.js';
 
 describe('база данных (node:sqlite)', () => {
   before(() => {
@@ -104,6 +105,37 @@ describe('база данных (node:sqlite)', () => {
     assert.match(json.description!, /изменено наказание/);
     assert.match(json.description!, /🆕 \*\*7\.1\*\*/);
     assert.match(json.footer!.text, /новых: 1 · изменено: 1/);
+  });
+
+  it('настройки AI сервера: значения по умолчанию и изменения', () => {
+    assert.deepEqual(
+      { ...aiSettingsFor('g1'), instructions: null },
+      {
+        answerLength: 'short',
+        temperature: null,
+        rewrite: true,
+        showSources: true,
+        contextSize: 6,
+        instructions: null,
+        tone: 'neutral',
+        maxTokens: null,
+        fallbackModel: null,
+        searchComplaints: true,
+        showModel: false,
+        faqFirst: true,
+      },
+    );
+    updateGuild('g1', { ai_tone: 'official', ai_max_tokens: 600, ai_fallback_model: 'llama-3.3-70b-versatile', ai_search_complaints: 0 });
+    const s = aiSettingsFor('g1');
+    assert.equal(s.tone, 'official');
+    assert.equal(s.maxTokens, 600);
+    assert.equal(s.fallbackModel, 'llama-3.3-70b-versatile');
+    assert.match(TONE_PROMPTS[s.tone], /на «вы»/);
+    // «Жалобы в поиске» выключены — фрагменты из жалоб не попадают в результаты.
+    const withComplaints = searchKnowledge('провоцирование', 'g1', 6, 0.1, false).map((h) => h.chunk.doc_url);
+    const rulesOnly = searchKnowledge('провоцирование', 'g1', 6, 0.1, true).map((h) => h.chunk.doc_url);
+    assert.ok(withComplaints.includes('https://f/threads/2/'));
+    assert.ok(!rulesOnly.includes('https://f/threads/2/'));
   });
 
   it('удаление источника удаляет осиротевшие документы', () => {

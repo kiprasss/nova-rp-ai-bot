@@ -19,6 +19,14 @@ export interface GuildRow {
   ai_show_sources: number;
   ai_context_size: number;
   ai_instructions: string | null;
+  ai_tone: 'neutral' | 'official' | 'friendly' | 'strict';
+  ai_max_tokens: number | null;
+  ai_fallback_model: string | null;
+  ai_search_complaints: number;
+  ai_auto_reply: number;
+  ai_threads: number;
+  ai_show_model: number;
+  ai_faq_first: number;
   complaints_channel_id: string | null;
   last_complaint_event_id: number;
   settings_message_id: string | null;
@@ -113,6 +121,7 @@ export interface ChunkRow {
   text: string;
   title: string;
   is_rules: number;
+  is_complaint: number;
 }
 
 export interface RuleRow {
@@ -340,7 +349,7 @@ export function touchDocument(url: string, lastPostTs: number | null): void {
 
 export function allChunks(): ChunkRow[] {
   return all<ChunkRow>(
-    `SELECT c.id, c.doc_url, c.idx, c.post_url, c.text, d.title, d.is_rules
+    `SELECT c.id, c.doc_url, c.idx, c.post_url, c.text, d.title, d.is_rules, d.is_complaint
      FROM chunks c JOIN documents d ON d.url = c.doc_url`,
   );
 }
@@ -353,7 +362,7 @@ export function ruleChunks(): ChunkRow[] {
   return all<ChunkRow>(
     `SELECT -r.id AS id, r.doc_url, 0 AS idx, r.post_url,
             'Пункт ' || r.point || ': ' || r.text || COALESCE(char(10) || 'Наказание: ' || r.punishment, '') AS text,
-            d.title, d.is_rules
+            d.title, d.is_rules, d.is_complaint
      FROM rules r JOIN documents d ON d.url = r.doc_url
      WHERE d.is_rules = 1 AND d.is_complaint = 0`,
   );

@@ -175,14 +175,18 @@ function getIndex(): Bm25Index {
  * Поиск по базе знаний. scope — ID сервера (ищем только по его источникам; если источников нет —
  * по глобальной базе) или null для ЛС (ищем по всей базе).
  */
-export function searchKnowledge(query: string, scope: string | null, limit = 6, minScore = 1.5): SearchHit[] {
+export function searchKnowledge(query: string, scope: string | null, limit = 6, minScore = 1.5, excludeComplaints = false): SearchHit[] {
   let allowed: Set<string> | null = null;
   if (scope) {
     allowed = docUrlsForScope(scope);
     if (!allowed.size) allowed = docUrlsForScope('global');
     if (!allowed.size) allowed = null;
   }
-  const hits = getIndex().search(expandSlang(query), limit * 3, allowed ? (c) => allowed!.has(c.doc_url) : undefined);
+  const hits = getIndex().search(
+    expandSlang(query),
+    limit * 3,
+    (c) => (!allowed || allowed.has(c.doc_url)) && !(excludeComplaints && c.is_complaint === 1),
+  );
   return capPerDoc(hits, limit, minScore);
 }
 
