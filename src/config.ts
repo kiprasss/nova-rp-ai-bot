@@ -1,7 +1,28 @@
 import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { ProviderId } from './ai/providers.js';
 
-if (existsSync('.env')) process.loadEnvFile('.env');
+/** Корень проекта (config.js лежит в dist/src/). */
+export const PROJECT_ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
+
+/**
+ * Ищем файл с настройками: .env, а также частые ошибки при загрузке через файловый менеджер
+ * хостинга или Windows (.env.txt, env, env.txt). Сначала в рабочей папке, затем в корне проекта.
+ */
+const ENV_NAMES = ['.env', '.env.txt', 'env', 'env.txt'];
+export const loadedEnvFile: string | null = (() => {
+  for (const dir of [process.cwd(), PROJECT_ROOT]) {
+    for (const name of ENV_NAMES) {
+      const p = join(dir, name);
+      if (existsSync(p)) {
+        process.loadEnvFile(p);
+        return p;
+      }
+    }
+  }
+  return null;
+})();
 
 function str(name: string, fallback = ''): string {
   const v = process.env[name];
@@ -73,6 +94,10 @@ export function assertRuntimeConfig(): void {
   if (!config.clientId) missing.push('DISCORD_CLIENT_ID');
   if (!config.encryptionKey) missing.push('ENCRYPTION_KEY');
   if (missing.length) {
-    throw new Error(`Не заданы переменные окружения: ${missing.join(', ')}. Скопируйте .env.example в .env и заполните.`);
+    const where = loadedEnvFile
+      ? `Файл настроек найден (${loadedEnvFile}), но в нём нет этих значений — проверьте названия и что после «=» есть значение.`
+      : `Файл .env не найден в ${process.cwd()}${process.cwd() === PROJECT_ROOT ? '' : ` и ${PROJECT_ROOT}`}. ` +
+        'Загрузите .env в корень проекта (рядом с package.json) или задайте переменные в панели хостинга.';
+    throw new Error(`Не заданы переменные окружения: ${missing.join(', ')}. ${where}`);
   }
 }
