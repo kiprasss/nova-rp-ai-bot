@@ -166,14 +166,7 @@ async function indexThread(
     }
   });
 
-  // В темах правил каждый пункт — ещё и отдельный короткий фрагмент: поиск находит именно нужный пункт.
-  if (isRules) {
-    const ruleChunks = rules.map((r) => ({
-      postUrl: r.postUrl,
-      text: `Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}`,
-    }));
-    chunks.unshift(...ruleChunks);
-  }
+  // Отдельные фрагменты «по пункту» строятся при поиске из таблицы rules (repo.ruleChunks).
 
   const hash = createHash('sha1').update(posts.map((p) => p.text).join('\n')).digest('hex');
 

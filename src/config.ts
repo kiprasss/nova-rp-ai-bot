@@ -63,6 +63,8 @@ export const config = {
     .map((u) => u.trim())
     .filter(Boolean),
   complaintCheckMinutes: Math.max(3, int('COMPLAINT_CHECK_MINUTES', 10)),
+  /** Сколько страниц раздела жалоб просматривать при первом (глубоком) проходе. */
+  complaintScanPages: Math.min(10, Math.max(1, int('COMPLAINT_SCAN_PAGES', 3))),
 
   guildHourlyLimit: int('GUILD_HOURLY_LIMIT', 300),
   defaultUserHourlyLimit: int('DEFAULT_USER_HOURLY_LIMIT', 10),

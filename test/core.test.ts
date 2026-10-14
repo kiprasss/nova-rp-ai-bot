@@ -7,6 +7,7 @@ import { PROVIDERS, isReasoningModel, promptStyleFor, rankModels, stripReasoning
 import { diffRules } from '../src/forum/ruleDiff.js';
 import { isDeletableBotMessage, parseMessageRef } from '../src/commands/clean.js';
 import { recommendedUserLimit } from '../src/discord/wizard.js';
+import { detectTerms } from '../src/ai/glossary.js';
 import { Bm25Index, expandSlang, mergeHits, stem, tokenize } from '../src/ai/search.js';
 import { buildComplaint, parseDateTime } from '../src/complaint.js';
 import { decryptSecret, deriveKey, encryptSecret, maskSecret } from '../src/crypto.js';
@@ -73,7 +74,7 @@ describe('search', () => {
     assert.ok(tokenize('провоцироват').includes('~провоц'));
     assert.ok(tokenize('провоцирование').includes('~провоц'));
     assert.match(expandSlang('можна ли провоцироват гос сотрудника?'), /государственных структур/);
-    assert.match(expandSlang('дм в зз'), /DM убийство/);
+    assert.match(expandSlang('дм в зз'), /DM DeathMatch/);
     assert.match(expandSlang('дм в зз'), /зелёная зона/);
     assert.equal(expandSlang('просто вопрос'), 'просто вопрос');
 
@@ -318,6 +319,20 @@ describe('/clean — что можно удалять', () => {
     assert.equal(isDeletableBotMessage(msg({ id: 'menu' }), 'bot', new Set(['menu'])), false);
     assert.equal(isDeletableBotMessage(msg({ title: '📜 Обновление правил: Общие' }), 'bot', new Set()), false);
     assert.equal(isDeletableBotMessage(msg({ title: '⚙️ Панель управления NOVA RP AI' }), 'bot', new Set()), false);
+  });
+});
+
+describe('термины RP', () => {
+  it('узнаёт ДМ, ТК, СК, МГ кириллицей и латиницей', () => {
+    assert.deepEqual(detectTerms('что такое дм?').map((t) => t.abbr), ['DM']);
+    assert.deepEqual(detectTerms('что значит TK и SK').map((t) => t.abbr), ['SK', 'TK']);
+    assert.deepEqual(detectTerms('мг это что').map((t) => t.abbr), ['MG']);
+    assert.deepEqual(detectTerms('дмить можно?').map((t) => t.abbr), ['DM']);
+    assert.equal(detectTerms('дмитрий привет').length, 0);
+  });
+  it('сленг раскрывается в названия из правил, без лишних слов', () => {
+    assert.equal(expandSlang('что такое дм'), 'что такое дм DM DeathMatch');
+    assert.deepEqual(tokenize('что такое'), []);
   });
 });
 

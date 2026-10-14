@@ -7,6 +7,7 @@ import { matchFaq } from './faq.js';
 import { buildPrompt, citedNumbers, type ContextFragment } from './prompt.js';
 import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
 import { lookupRule } from './ruleLookup.js';
+import { termDefinitions } from './glossary.js';
 import { rewriteQuery } from './queryRewrite.js';
 import { mergeHits, searchKnowledge } from './search.js';
 
@@ -98,6 +99,17 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
 
   const fragments: ContextFragment[] = [];
   const seenRules = new Set<number>();
+  // «Что такое ДМ / ТК / СК…» — сразу берём определение термина из правил.
+  for (const r of termDefinitions(searchText, input.guildId)) {
+    if (seenRules.has(r.id)) continue;
+    seenRules.add(r.id);
+    fragments.push({
+      n: fragments.length + 1,
+      title: r.doc_title,
+      url: r.post_url,
+      text: `Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}`,
+    });
+  }
   const points = [...new Set(searchText.match(/\d{1,2}(?:\.\d{1,2}){1,2}/g) ?? [])].slice(0, 3);
   for (const p of points) {
     const r = lookupRule(p, input.guildId)[0];

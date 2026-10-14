@@ -14,7 +14,7 @@ import {
   saveComplaintThread,
 } from '../src/db/repo.js';
 import { buildComplaintAlert } from '../src/discord/complaintAlerts.js';
-import { extractOffenderId } from '../src/forum/complaintWatch.js';
+import { extractOffenderId, extractOffenderNick, queueExistingComplaints } from '../src/forum/complaintWatch.js';
 import { parseThread } from '../src/forum/parser.js';
 import { THREAD_HTML } from './fixtures.js';
 
@@ -51,7 +51,15 @@ describe('жалобы на игровые ID', () => {
   });
 
   it('события и уведомление с упоминанием', () => {
-    saveComplaintThread({ url: 'https://f/threads/1/', offender_id: '54321', title: '5.4 ОП I 54321', prefix: 'Ожидает рассмотрения', last_post_ts: 1 });
+    saveComplaintThread({
+      url: 'https://f/threads/1/',
+      offender_id: '54321',
+      offender_nick: 'John Doe',
+      author: 'Test Author',
+      title: '5.4 ОП I 54321',
+      prefix: 'Ожидает рассмотрения',
+      last_post_ts: 1,
+    });
     assert.equal(recentComplaintsFor('54321').length, 1);
     addComplaintEvent({ url: 'https://f/threads/1/', offender_id: '54321', title: '5.4 ОП I 54321', prefix: 'Ожидает рассмотрения', kind: 'new' });
     const [e] = complaintEventsBetween(0, maxComplaintEventId());
@@ -61,5 +69,23 @@ describe('жалобы на игровые ID', () => {
     const embed = JSON.parse(JSON.stringify(msg.embeds![0]));
     assert.match(embed.title, /подана жалоба/);
     assert.equal(buildComplaintAlert(e, 'u1', false).content, undefined);
+    // кто подал и на кого
+    const fields = embed.fields.map((f: { name: string; value: string }) => `${f.name}=${f.value}`);
+    assert.ok(fields.includes('Кто подал=Test Author'));
+    assert.ok(fields.includes('На кого (ник в жалобе)=John Doe'));
+  });
+
+  it('при привязке ID находятся уже существующие жалобы', () => {
+    const before = maxComplaintEventId();
+    assert.equal(queueExistingComplaints('54321'), 1);
+    const [e] = complaintEventsBetween(before, maxComplaintEventId());
+    assert.equal(e.kind, 'existing');
+    assert.match(JSON.stringify(buildComplaintAlert(e, 'u1').embeds), /есть жалоба на ваш игровой ID/);
+    assert.equal(queueExistingComplaints('99999'), 0);
+  });
+
+  it('ник из формы жалобы', () => {
+    const t = parseThread(THREAD_HTML, 'https://forum.grand-rp.su/threads/410706/');
+    assert.equal(extractOffenderNick(t.fields), 'John Doe');
   });
 });

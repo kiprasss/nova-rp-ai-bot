@@ -44,6 +44,7 @@ async function complaintTick(client: Client): Promise<void> {
   if (!needed) return;
   try {
     await watchComplaints();
+    // (если форум закрыт защитой — watchComplaints сам пишет предупреждение в консоль)
     await dispatchComplaintAlerts(client);
   } catch (err) {
     log.error('Ошибка проверки жалоб', err);

@@ -197,6 +197,10 @@ function migrate(d: DatabaseSync): void {
       ['last_complaint_event_id', 'INTEGER NOT NULL DEFAULT 0'],
     ],
     user_settings: [['complaint_dm', 'INTEGER NOT NULL DEFAULT 1']],
+    complaint_threads: [
+      ['author', 'TEXT'],
+      ['offender_nick', 'TEXT'],
+    ],
     role_perms: [
       ['dm_access', 'INTEGER NOT NULL DEFAULT 1'],
       ['see_channels', 'INTEGER NOT NULL DEFAULT 1'],

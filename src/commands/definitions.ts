@@ -82,6 +82,7 @@ export const commandDefinitions: RESTPostAPIChatInputApplicationCommandsJSONBody
         .addStringOption((o) => o.setName('id').setDescription('Игровой ID').setRequired(true).setMaxLength(7)),
     )
     .addSubcommand((s) => s.setName('список').setDescription('Мои привязанные ID и последние жалобы на них'))
+    .addSubcommand((s) => s.setName('проверить').setDescription('Проверить форум прямо сейчас (новые и существующие жалобы на мои ID)'))
     .setContexts(...GUILD_AND_DM)
     .setIntegrationTypes(...BOTH_INSTALLS)
     .toJSON(),

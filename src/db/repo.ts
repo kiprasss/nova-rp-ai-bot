@@ -345,6 +345,33 @@ export function allChunks(): ChunkRow[] {
   );
 }
 
+/**
+ * Каждый пункт правил — отдельный короткий фрагмент для поиска (строится из таблицы rules,
+ * поэтому работает и для уже собранной базы без повторной загрузки форума). id отрицательные.
+ */
+export function ruleChunks(): ChunkRow[] {
+  return all<ChunkRow>(
+    `SELECT -r.id AS id, r.doc_url, 0 AS idx, r.post_url,
+            'Пункт ' || r.point || ': ' || r.text || COALESCE(char(10) || 'Наказание: ' || r.punishment, '') AS text,
+            d.title, d.is_rules
+     FROM rules r JOIN documents d ON d.url = r.doc_url
+     WHERE d.is_rules = 1 AND d.is_complaint = 0`,
+  );
+}
+
+/** Пункты правил, в тексте которых встречается шаблон LIKE (например «%(DM)%»). */
+export function rulesLike(pattern: string, limit = 10): RuleRow[] {
+  return all<RuleRow>(
+    `SELECT r.*, d.title AS doc_title, d.is_rules, d.is_complaint
+     FROM rules r JOIN documents d ON d.url = r.doc_url
+     WHERE r.text LIKE ?
+     ORDER BY d.is_complaint, d.is_rules DESC, length(r.point), r.point
+     LIMIT ?`,
+    pattern,
+    limit,
+  );
+}
+
 /** URL документов, доступных в области (сервер или global). */
 export function docUrlsForScope(scope: string): Set<string> {
   const rows = all<{ doc_url: string }>(
@@ -558,6 +585,10 @@ export function countPlayerIds(): number {
 export interface ComplaintThreadRow {
   url: string;
   offender_id: string | null;
+  /** Ник из поля «Ник игрока» (на кого жалоба). */
+  offender_nick: string | null;
+  /** Автор темы (кто подал жалобу). */
+  author: string | null;
   title: string;
   prefix: string | null;
   last_post_ts: number | null;
@@ -574,11 +605,13 @@ export function countComplaintThreads(): number {
 
 export function saveComplaintThread(t: Omit<ComplaintThreadRow, 'first_seen'>): void {
   run(
-    `INSERT INTO complaint_threads (url, offender_id, title, prefix, last_post_ts, first_seen) VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(url) DO UPDATE SET offender_id = excluded.offender_id, title = excluded.title, prefix = excluded.prefix,
-       last_post_ts = excluded.last_post_ts`,
+    `INSERT INTO complaint_threads (url, offender_id, offender_nick, author, title, prefix, last_post_ts, first_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(url) DO UPDATE SET offender_id = excluded.offender_id, offender_nick = excluded.offender_nick, author = excluded.author,
+       title = excluded.title, prefix = excluded.prefix, last_post_ts = excluded.last_post_ts`,
     t.url,
     t.offender_id,
+    t.offender_nick,
+    t.author,
     t.title,
     t.prefix,
     t.last_post_ts,
@@ -592,7 +625,8 @@ export interface ComplaintEventRow {
   offender_id: string;
   title: string;
   prefix: string | null;
-  kind: 'new' | 'status';
+  /** new — новая жалоба, status — сменился статус, existing — уже была на форуме (найдена при привязке ID). */
+  kind: 'new' | 'status' | 'existing';
   dm_sent: number;
   ts: number;
 }

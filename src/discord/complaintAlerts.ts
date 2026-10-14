@@ -1,6 +1,7 @@
 import { ChannelType, EmbedBuilder, type BaseMessageOptions, type Client } from 'discord.js';
 import {
   complaintEventsBetween,
+  getComplaintThread,
   getUserSettings,
   listGuilds,
   markComplaintEventDm,
@@ -18,14 +19,22 @@ import { fetchMember } from './permissions.js';
 const RETENTION_MS = 30 * 24 * 3600_000;
 
 /** Сообщение о жалобе с упоминанием владельца игрового ID. */
+const ALERT_TITLES: Record<ComplaintEventRow['kind'], string> = {
+  new: '🚨 На форуме подана жалоба на ваш игровой ID',
+  status: '📋 Изменился статус жалобы на ваш игровой ID',
+  existing: '📂 На форуме есть жалоба на ваш игровой ID',
+};
+
 export function buildComplaintAlert(e: ComplaintEventRow, userId: string, mention = true): BaseMessageOptions {
-  const isNew = e.kind === 'new';
+  const thread = getComplaintThread(e.url);
   const embed = new EmbedBuilder()
-    .setColor(isNew ? 0xef4444 : 0xf59e0b)
-    .setTitle(isNew ? '🚨 На форуме подана жалоба на ваш игровой ID' : '📋 Изменился статус жалобы на ваш игровой ID')
+    .setColor(e.kind === 'new' ? 0xef4444 : e.kind === 'status' ? 0xf59e0b : 0x3b82f6)
+    .setTitle(ALERT_TITLES[e.kind])
     .setURL(e.url)
     .addFields(
       { name: 'Тема', value: `[${truncate(e.title, 200)}](${e.url})` },
+      { name: 'Кто подал', value: thread?.author ?? 'не указано', inline: true },
+      { name: 'На кого (ник в жалобе)', value: thread?.offender_nick ?? 'не указан', inline: true },
       { name: 'Игровой ID', value: e.offender_id, inline: true },
       { name: 'Статус', value: e.prefix ?? 'не указан', inline: true },
     )
