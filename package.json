@@ -1,0 +1,31 @@
+{
+  "name": "nova-rp-ai-bot",
+  "version": "1.0.0",
+  "description": "Discord AI-помощник для GTA RP проекта NOVA RP (forum.grand-rp.su)",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "dev": "tsc -p tsconfig.json && node dist/src/index.js",
+    "deploy": "node dist/src/deploy-commands.js",
+    "lint": "eslint .",
+    "test": "node --test \"dist/test/**/*.test.js\"",
+    "check": "npm run lint && npm run build && npm test"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "domhandler": "^5.0.3",
+    "discord.js": "^14.22.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^22.18.0",
+    "eslint": "^9.35.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.43.0"
+  }
+}

@@ -1,0 +1,104 @@
+import { DiscordAPIError, type Client, type Interaction, type Message } from 'discord.js';
+import { onCleanButton } from '../commands/clean.js';
+import { handleAutocomplete, handleCommand, onComplaintModal, onFaqSelect, onSetupButton } from '../commands/handlers.js';
+import { UserError, errorDetails } from '../util/errors.js';
+import { log } from '../util/logger.js';
+import { askSafely, gateQuestion } from './ask.js';
+import { handleDmInteraction } from './dmMenu.js';
+import { logError } from './guildLog.js';
+import { handleSettingsInteraction } from './settingsMenu.js';
+import { channelIdFor } from './setupGuild.js';
+import { replyText } from './ui.js';
+
+const GENERIC_ERROR = '⚠️ Произошла внутренняя ошибка. Подробности переданы администрации, попробуйте позже.';
+
+async function routeInteraction(i: Interaction): Promise<void> {
+  if (i.isChatInputCommand()) return handleCommand(i);
+  if (i.isAutocomplete()) {
+    await handleAutocomplete(i).catch(() => i.respond([]).catch(() => undefined));
+    return;
+  }
+  if (!i.isMessageComponent() && !i.isModalSubmit()) return;
+  const prefix = i.customId.split(':')[0];
+  switch (prefix) {
+    case 'cfg':
+      return handleSettingsInteraction(i);
+    case 'dm':
+      return handleDmInteraction(i);
+    case 'setup':
+      if (i.isButton()) return onSetupButton(i);
+      return;
+    case 'complaint':
+      if (i.isModalSubmit()) return onComplaintModal(i);
+      return;
+    case 'faq':
+      if (i.isStringSelectMenu()) return onFaqSelect(i);
+      return;
+    case 'clean':
+      if (i.isButton()) return onCleanButton(i);
+      return;
+  }
+}
+
+export async function onInteraction(i: Interaction): Promise<void> {
+  try {
+    await routeInteraction(i);
+  } catch (err) {
+    if (!i.isRepliable()) return;
+    if (err instanceof UserError) {
+      await replyText(i, err.message);
+      return;
+    }
+    if (err instanceof DiscordAPIError && err.code === 10062) {
+      log.warn('Взаимодействие истекло (Unknown interaction)');
+      return;
+    }
+    const where = i.isChatInputCommand() ? `/${i.commandName}` : 'customId' in i ? `компонент ${i.customId}` : 'взаимодействие';
+    await logError(i.client, i.guildId, where, errorDetails(err), i.user.id);
+    await replyText(i, GENERIC_ERROR);
+  }
+}
+
+/** Вопросы обычными сообщениями: в ЛС, в #ai-помощник и по упоминанию бота (если разрешён любой канал). */
+export async function onMessage(client: Client, message: Message): Promise<void> {
+  if (message.author.bot || message.system) return;
+  const content = message.content.trim();
+  if (!content) return;
+
+  try {
+    if (!message.inGuild()) {
+      if (content.startsWith('/')) return;
+      const gate = await gateQuestion(client, null, message.author.id, null);
+      if (!gate.ok) {
+        await message.reply(gate.message);
+        return;
+      }
+      if ('sendTyping' in message.channel) await message.channel.sendTyping().catch(() => undefined);
+      const res = await askSafely(client, null, message.author.id, content);
+      await message.reply({ content: res.text, allowedMentions: { repliedUser: false, parse: [] } });
+      return;
+    }
+
+    const isAssistant = message.channelId === channelIdFor(message.guildId, 'assistant');
+    const mentioned = client.user ? message.mentions.users.has(client.user.id) : false;
+    if (!isAssistant && !mentioned) return;
+    const question = content.replace(/<@!?\d+>/g, '').trim();
+    if (question.length < 3) return;
+
+    const gate = await gateQuestion(client, message.guild, message.author.id, message.channelId);
+    if (!gate.ok) {
+      // В чужих каналах на упоминание без прав молчим, чтобы не спамить.
+      if (isAssistant || !gate.message.startsWith('📍')) {
+        const reply = await message.reply({ content: gate.message, allowedMentions: { repliedUser: false } });
+        setTimeout(() => reply.delete().catch(() => undefined), 15_000);
+      }
+      return;
+    }
+    await message.channel.sendTyping().catch(() => undefined);
+    const res = await askSafely(client, gate.guildId, message.author.id, question);
+    await message.reply({ content: res.text, allowedMentions: { repliedUser: false, parse: [] } });
+  } catch (err) {
+    await logError(client, message.guildId, 'Сообщение-вопрос', errorDetails(err), message.author.id);
+    await message.reply('⚠️ Не удалось получить ответ. Попробуйте позже.').catch(() => undefined);
+  }
+}
