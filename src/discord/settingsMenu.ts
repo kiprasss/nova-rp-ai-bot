@@ -1028,6 +1028,7 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
       return;
     }
     case 'chanfix': {
+      if (i.isButton()) await i.deferUpdate(); // создание каналов дольше 3 секунд
       const res = await applySetup(client, guild);
       if (res.created.length) await audit(client, guildId, uid, 'Восстановлены каналы', res.created.join(', '));
       await updateOrReply(i, viewChannels(guild, inGuild, res.created.length ? `🛠 Восстановлено: ${res.created.join(', ')}` : '✅ Всё на месте, восстанавливать нечего.'));

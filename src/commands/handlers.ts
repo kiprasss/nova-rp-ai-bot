@@ -91,9 +91,11 @@ async function onSetupButton(i: ButtonInteraction) {
   if (!isGuildAdmin(member)) throw new UserError('⛔ Только для администраторов.');
 
   if (op === 'restore') {
+    // Создание каналов занимает больше 3 секунд — сначала подтверждаем нажатие, потом редактируем ответ.
+    await i.deferUpdate();
     const res = await applySetup(i.client, i.guild);
     await audit(i.client, guildId, i.user.id, 'Восстановление /setup', res.created.join(', ') || 'ничего');
-    await i.update({
+    await i.editReply({
       embeds: [
         new EmbedBuilder()
           .setColor(COLORS.ok)
@@ -105,6 +107,7 @@ async function onSetupButton(i: ButtonInteraction) {
     return;
   }
   if (op === 'menu') {
+    await i.deferUpdate();
     const g = getGuild(guildId);
     const ch = g?.settings_channel_id ? await i.guild.channels.fetch(g.settings_channel_id).catch(() => null) : null;
     if (ch?.type !== ChannelType.GuildText) {
@@ -113,7 +116,7 @@ async function onSetupButton(i: ButtonInteraction) {
     if (g?.settings_message_id) await ch.messages.delete(g.settings_message_id).catch(() => undefined);
     await postSettingsMenu(i.guild, ch);
     await audit(i.client, guildId, i.user.id, 'Меню настроек отправлено заново');
-    await i.update({ content: `📨 Меню отправлено в <#${ch.id}>.`, embeds: [], components: [] });
+    await i.editReply({ content: `📨 Меню отправлено в <#${ch.id}>.`, embeds: [], components: [] });
   }
 }
 
