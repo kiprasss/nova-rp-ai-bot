@@ -6,6 +6,7 @@ import { openDatabase } from './db/database.js';
 import { importSeedIfEmpty } from './kbSeed.js';
 import { onInteraction, onMessage } from './discord/router.js';
 import { seedGlobalSources, startScheduler } from './scheduler.js';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setForumDebugDir } from './forum/blockDiagnostics.js';
 import { acquireInstanceLock } from './util/instanceLock.js';
@@ -45,6 +46,17 @@ client.once(Events.ClientReady, (c) => {
   startScheduler(c);
   void syncCommands(c);
 });
+
+// Пульс для внешнего мониторинга (server-monitor.py): файл обновляется, только пока бот подключён к Discord.
+const heartbeatFile = join(dirname(config.databasePath), 'heartbeat.json');
+setInterval(() => {
+  if (!client.isReady()) return;
+  try {
+    writeFileSync(heartbeatFile, JSON.stringify({ ts: Date.now(), ping: client.ws.ping }));
+  } catch (err) {
+    log.warn('Не удалось записать heartbeat', err);
+  }
+}, 30_000).unref();
 
 client.on(Events.InteractionCreate, (i) => void onInteraction(i));
 client.on(Events.MessageCreate, (m) => void onMessage(client, m));
