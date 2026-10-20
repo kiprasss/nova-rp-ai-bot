@@ -1,4 +1,4 @@
-import { ActivityType, Client, Events, GatewayIntentBits, Partials } from 'discord.js';
+import { ActivityType, Client, DiscordjsErrorCodes, Events, GatewayIntentBits, Partials } from 'discord.js';
 import { syncCommands } from './commands/sync.js';
 import { assertRuntimeConfig, config } from './config.js';
 import { initSecretKey } from './crypto.js';
@@ -60,4 +60,15 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-await client.login(config.discordToken);
+// После включения компьютера сеть может появиться позже бота — повторяем вход, пока не получится.
+for (let attempt = 1; ; attempt++) {
+  try {
+    await client.login(config.discordToken);
+    break;
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === DiscordjsErrorCodes.TokenInvalid) throw err;
+    const delay = Math.min(60, attempt * 5);
+    log.error(`Не удалось подключиться к Discord (попытка ${attempt}), повтор через ${delay} с`, err);
+    await new Promise((r) => setTimeout(r, delay * 1000));
+  }
+}
