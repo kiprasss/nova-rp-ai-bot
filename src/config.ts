@@ -56,6 +56,9 @@ export const config = {
   scrapeCacheMinutes: int('SCRAPE_CACHE_MINUTES', 30),
   defaultRefreshHours: Math.max(1, int('DEFAULT_REFRESH_HOURS', 12)),
   seedGlobalSources: bool('SEED_GLOBAL_SOURCES', true),
+  /** Проходить проверку браузера на форуме через headless Chromium (нужен playwright-core и браузер). */
+  forumBrowserClearance: bool('FORUM_BROWSER_CLEARANCE', true),
+  forumBrowserPath: str('FORUM_BROWSER_PATH') || undefined,
 
 
   guildHourlyLimit: int('GUILD_HOURLY_LIMIT', 300),

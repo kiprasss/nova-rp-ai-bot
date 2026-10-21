@@ -40,7 +40,12 @@ export interface RefreshReport {
   durationMs: number;
 }
 
-const fetcher = new PoliteFetcher({ userAgent: config.userAgent, delayMs: config.scrapeDelayMs });
+const fetcher = new PoliteFetcher({
+  userAgent: config.userAgent,
+  delayMs: config.scrapeDelayMs,
+  browserClearance: config.forumBrowserClearance,
+  browserPath: config.forumBrowserPath,
+});
 /** Общий загрузчик: обновление базы и проверка жалоб идут в одной очереди с паузами. */
 export const forumFetcher = fetcher;
 
