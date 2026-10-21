@@ -47,19 +47,47 @@ const CLEARANCE_RETRY_MS = 5 * 60_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Вежливый загрузчик: один запрос за раз, пауза между запросами, повтор при 429/5xx. */
+interface QueuedGet {
+  url: string;
+  resolve: (body: string) => void;
+  reject: (err: unknown) => void;
+}
+
+/**
+ * Вежливый загрузчик: один запрос за раз, пауза между запросами, повтор при 429/5xx.
+ * Срочные запросы (проверка жалоб по команде) идут вперёд очереди, а не ждут обновления базы.
+ */
 export class PoliteFetcher {
-  private queue: Promise<unknown> = Promise.resolve();
+  private readonly urgent: QueuedGet[] = [];
+  private readonly normal: QueuedGet[] = [];
+  private busy = false;
   private lastRequestAt = 0;
   private cookie: string | null = null;
   private lastClearanceAt = 0;
 
   constructor(private readonly opts: FetcherOptions) {}
 
-  get(url: string): Promise<string> {
-    const task = this.queue.then(() => this.doGet(url));
-    this.queue = task.catch(() => undefined);
-    return task;
+  get(url: string, opts: { urgent?: boolean } = {}): Promise<string> {
+    return new Promise((resolve, reject) => {
+      (opts.urgent ? this.urgent : this.normal).push({ url, resolve, reject });
+      void this.drain();
+    });
+  }
+
+  private async drain(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      for (let next = this.urgent.shift() ?? this.normal.shift(); next; next = this.urgent.shift() ?? this.normal.shift()) {
+        try {
+          next.resolve(await this.doGet(next.url));
+        } catch (err) {
+          next.reject(err);
+        }
+      }
+    } finally {
+      this.busy = false;
+    }
   }
 
   private async doGet(url: string): Promise<string> {

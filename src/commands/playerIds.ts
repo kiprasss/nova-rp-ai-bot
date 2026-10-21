@@ -13,6 +13,7 @@ import { COLORS, audit } from '../discord/guildLog.js';
 import { lastComplaintCheckAt, queueExistingComplaints, watchComplaints } from '../forum/complaintWatch.js';
 import { isGuildAdmin } from '../discord/permissions.js';
 import { UserError } from '../util/errors.js';
+import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 
 export function normalizeGameId(raw: string): string | null {
@@ -38,6 +39,8 @@ export function idsOverview(userId: string, guildId: string | null): string {
 }
 
 const CHECK_COOLDOWN_MS = 2 * 60_000;
+/** Сколько ждать результата проверки, прежде чем ответить «идёт в фоне». */
+const CHECK_WAIT_MS = 45_000;
 
 function overviewEmbed(userId: string, guildId: string | null, note: string): EmbedBuilder {
   return new EmbedBuilder().setColor(COLORS.info).setTitle('🎮 Мои игровые ID').setDescription(`${note}\n\n${idsOverview(userId, guildId)}`);
@@ -61,8 +64,18 @@ export async function cmdPlayerIds(i: ChatInputCommandInteraction): Promise<void
       return;
     }
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-    const res = await watchComplaints();
-    await dispatchComplaintAlerts(i.client).catch(() => undefined);
+    // Первый проход (или занятый форум) может идти несколько минут — не держим пользователя.
+    const check = watchComplaints().then(async (r) => {
+      await dispatchComplaintAlerts(i.client).catch(() => undefined);
+      return r;
+    });
+    const res = await Promise.race([check, new Promise<null>((r) => setTimeout(() => r(null), CHECK_WAIT_MS))]);
+    if (!res) {
+      check.catch((err) => log.warn('Проверка жалоб не удалась', err));
+      note = '⏳ Проверка форума идёт в фоне (первая проверка просматривает несколько страниц и занимает пару минут). Если найдутся жалобы на ваши ID — бот сообщит в #ai-жалобы и в ЛС.';
+      await i.editReply({ embeds: [overviewEmbed(uid, i.guildId, note)] });
+      return;
+    }
     note = res.blocked
       ? '⚠️ Форум сейчас закрыт защитой от ботов — проверить не удалось. Ниже — ранее найденные данные.'
       : `🔄 Форум проверен: просмотрено тем ${res.scanned}, новых событий ${res.events}.`;

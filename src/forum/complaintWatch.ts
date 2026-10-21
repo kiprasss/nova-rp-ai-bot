@@ -47,7 +47,7 @@ export interface WatchResult {
   blocked: boolean;
 }
 
-let running = false;
+let current: Promise<WatchResult> | null = null;
 let lastRunAt = 0;
 
 export function lastComplaintCheckAt(): number {
@@ -58,11 +58,17 @@ export function lastComplaintCheckAt(): number {
  * Проверяет разделы жалоб: новые темы и смену статуса у известных.
  * Первый проход (или deep) просматривает несколько страниц и только запоминает жалобы —
  * без уведомлений; уже существующие жалобы на ID показываются при его привязке.
+ * Если проверка уже идёт, возвращает её результат, а не запускает вторую.
  */
-export async function watchComplaints(opts: { deep?: boolean } = {}): Promise<WatchResult> {
+export function watchComplaints(opts: { deep?: boolean } = {}): Promise<WatchResult> {
+  current ??= runWatch(opts).finally(() => {
+    current = null;
+  });
+  return current;
+}
+
+async function runWatch(opts: { deep?: boolean }): Promise<WatchResult> {
   const result: WatchResult = { events: 0, scanned: 0, blocked: false };
-  if (running) return result;
-  running = true;
   try {
     const baseline = countComplaintThreads() === 0;
     const deep = baseline || !!opts.deep;
@@ -74,7 +80,7 @@ export async function watchComplaints(opts: { deep?: boolean } = {}): Promise<Wa
       const threads: ThreadListItem[] = [];
       for (let p = 1; p <= pages; p++) {
         try {
-          const listing = parseForum(await forumFetcher.get(pageUrl(forumUrl, p)), config.forumBaseUrl);
+          const listing = parseForum(await forumFetcher.get(pageUrl(forumUrl, p), { urgent: true }), config.forumBaseUrl);
           threads.push(...listing.threads);
           if (p >= listing.totalPages) break;
         } catch (err) {
@@ -96,7 +102,7 @@ export async function watchComplaints(opts: { deep?: boolean } = {}): Promise<Wa
         fetched++;
         let parsed;
         try {
-          parsed = parseThread(await forumFetcher.get(t.url), t.url);
+          parsed = parseThread(await forumFetcher.get(t.url, { urgent: true }), t.url);
         } catch (err) {
           if (err instanceof ForumBlockedError) {
             result.blocked = true;
@@ -132,7 +138,6 @@ export async function watchComplaints(opts: { deep?: boolean } = {}): Promise<Wa
     if (baseline) log.info(`Жалобы: первый проход — запомнено тем ${result.scanned}, без уведомлений`);
     else if (result.events) log.info(`Жалобы: новых событий ${result.events}`);
   } finally {
-    running = false;
     lastRunAt = Date.now();
   }
   return result;
