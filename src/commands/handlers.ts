@@ -15,6 +15,7 @@ import {
 } from 'discord.js';
 import { matchFaq } from '../ai/faq.js';
 import { cmdClean } from './clean.js';
+import { cmdPlayerIds } from './playerIds.js';
 import { lookupRule } from '../ai/ruleLookup.js';
 import { buildComplaint } from '../complaint.js';
 import { COMPLAINTS_FORUM_URL } from '../config.js';
@@ -335,6 +336,7 @@ async function cmdHelp(i: ChatInputCommandInteraction) {
         '`/наказание <пункт>` — какое наказание и даёт ли повтор WARN',
         '`/жалоба` — помощник: оформит жалобу на игрока по форме форума',
         '`/faq` — быстрые ответы администрации',
+        '`/мой-id добавить` — привязать игровой ID: бот упомянет вас, если на форуме подадут жалобу на этот ID',
         '`/setupls` — личное меню в ЛС (свой токен, длина ответа, источники)',
         '`/clean [канал] [количество]` — удалить сообщения бота в канале (нужно «Управлять сообщениями») или в ЛС; меню и важное остаются',
         '',
@@ -385,6 +387,8 @@ export async function handleCommand(i: ChatInputCommandInteraction): Promise<voi
       return cmdHelp(i);
     case 'clean':
       return cmdClean(i);
+    case 'мой-id':
+      return cmdPlayerIds(i);
     default:
       throw new UserError('Неизвестная команда.');
   }

@@ -27,6 +27,8 @@ export interface GuildRow {
   ai_threads: number;
   ai_show_model: number;
   ai_faq_first: number;
+  complaints_channel_id: string | null;
+  last_complaint_event_id: number;
   settings_message_id: string | null;
   ai_provider: string | null;
   ai_model: string | null;
@@ -62,7 +64,7 @@ export type AccessFlag = 'see_channels' | 'can_write' | 'see_settings' | 'dm_acc
 export const ACCESS_FLAGS: AccessFlag[] = ['see_channels', 'can_write', 'see_settings', 'dm_access'];
 
 /** Команды, которые можно запретить роли. /setup всегда только для администраторов. */
-export const BOT_COMMANDS = ['вопрос', 'правило', 'наказание', 'жалоба', 'faq', 'помощь', 'setupls'] as const;
+export const BOT_COMMANDS = ['вопрос', 'правило', 'наказание', 'жалоба', 'faq', 'помощь', 'setupls', 'мой-id'] as const;
 
 export function newRolePerm(guildId: string, roleId: string, defaultLimit: number, patch: Partial<RolePerm> = {}): RolePerm {
   return {
@@ -153,6 +155,8 @@ export interface UserSettingsRow {
   ai_provider: string | null;
   ai_model: string | null;
   ai_token: string | null;
+  /** Дублировать уведомления о жалобах на ваш игровой ID в ЛС. */
+  complaint_dm: number;
 }
 
 // ---------- meta ----------
@@ -532,23 +536,145 @@ export function getUserSettings(userId: string): UserSettingsRow {
       ai_provider: null,
       ai_model: null,
       ai_token: null,
+      complaint_dm: 1,
     }
   );
 }
 
 export function saveUserSettings(s: UserSettingsRow): void {
   run(
-    `INSERT INTO user_settings (user_id, answer_length, show_sources, ai_provider, ai_model, ai_token)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO user_settings (user_id, answer_length, show_sources, ai_provider, ai_model, ai_token, complaint_dm)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET answer_length = excluded.answer_length, show_sources = excluded.show_sources,
-       ai_provider = excluded.ai_provider, ai_model = excluded.ai_model, ai_token = excluded.ai_token`,
+       ai_provider = excluded.ai_provider, ai_model = excluded.ai_model, ai_token = excluded.ai_token,
+       complaint_dm = excluded.complaint_dm`,
     s.user_id,
     s.answer_length,
     s.show_sources,
     s.ai_provider,
     s.ai_model,
     s.ai_token,
+    s.complaint_dm,
   );
+}
+
+// ---------- игровые ID и жалобы ----------
+
+export const MAX_IDS_PER_USER = 3;
+
+export function listPlayerIds(userId: string): string[] {
+  return all<{ game_id: string }>('SELECT game_id FROM player_ids WHERE user_id = ? ORDER BY created_at', userId).map((r) => r.game_id);
+}
+
+export function ownerOfGameId(gameId: string): string | null {
+  return get<{ user_id: string }>('SELECT user_id FROM player_ids WHERE game_id = ?', gameId)?.user_id ?? null;
+}
+
+export function addPlayerId(userId: string, gameId: string): 'ok' | 'taken' | 'limit' | 'exists' {
+  const owner = ownerOfGameId(gameId);
+  if (owner === userId) return 'exists';
+  if (owner) return 'taken';
+  if (listPlayerIds(userId).length >= MAX_IDS_PER_USER) return 'limit';
+  run('INSERT INTO player_ids (game_id, user_id, created_at) VALUES (?, ?, ?)', gameId, userId, Date.now());
+  return 'ok';
+}
+
+export function removePlayerId(gameId: string, userId: string | null): boolean {
+  // userId = null — удаление администратором (любой привязки).
+  const r = userId
+    ? run('DELETE FROM player_ids WHERE game_id = ? AND user_id = ?', gameId, userId)
+    : run('DELETE FROM player_ids WHERE game_id = ?', gameId);
+  return r.changes > 0;
+}
+
+export function countPlayerIds(): number {
+  return get<{ n: number }>('SELECT COUNT(*) AS n FROM player_ids')?.n ?? 0;
+}
+
+export interface ComplaintThreadRow {
+  url: string;
+  offender_id: string | null;
+  /** Ник из поля «Ник игрока» (на кого жалоба). */
+  offender_nick: string | null;
+  /** Автор темы (кто подал жалобу). */
+  author: string | null;
+  title: string;
+  prefix: string | null;
+  last_post_ts: number | null;
+  first_seen: number;
+}
+
+export function getComplaintThread(url: string): ComplaintThreadRow | undefined {
+  return get<ComplaintThreadRow>('SELECT * FROM complaint_threads WHERE url = ?', url);
+}
+
+export function countComplaintThreads(): number {
+  return get<{ n: number }>('SELECT COUNT(*) AS n FROM complaint_threads')?.n ?? 0;
+}
+
+export function saveComplaintThread(t: Omit<ComplaintThreadRow, 'first_seen'>): void {
+  run(
+    `INSERT INTO complaint_threads (url, offender_id, offender_nick, author, title, prefix, last_post_ts, first_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(url) DO UPDATE SET offender_id = excluded.offender_id, offender_nick = excluded.offender_nick, author = excluded.author,
+       title = excluded.title, prefix = excluded.prefix, last_post_ts = excluded.last_post_ts`,
+    t.url,
+    t.offender_id,
+    t.offender_nick,
+    t.author,
+    t.title,
+    t.prefix,
+    t.last_post_ts,
+    Date.now(),
+  );
+}
+
+export interface ComplaintEventRow {
+  id: number;
+  url: string;
+  offender_id: string;
+  title: string;
+  prefix: string | null;
+  /** new — новая жалоба, status — сменился статус, existing — уже была на форуме (найдена при привязке ID). */
+  kind: 'new' | 'status' | 'existing';
+  dm_sent: number;
+  ts: number;
+}
+
+export function addComplaintEvent(e: Omit<ComplaintEventRow, 'id' | 'ts' | 'dm_sent'>): void {
+  run(
+    'INSERT INTO complaint_events (url, offender_id, title, prefix, kind, ts) VALUES (?, ?, ?, ?, ?, ?)',
+    e.url,
+    e.offender_id,
+    e.title,
+    e.prefix,
+    e.kind,
+    Date.now(),
+  );
+}
+
+export function maxComplaintEventId(): number {
+  return get<{ n: number | null }>('SELECT MAX(id) AS n FROM complaint_events')?.n ?? 0;
+}
+
+export function complaintEventsBetween(afterId: number, uptoId: number): ComplaintEventRow[] {
+  return all<ComplaintEventRow>('SELECT * FROM complaint_events WHERE id > ? AND id <= ? ORDER BY id', afterId, uptoId);
+}
+
+export function pendingDmComplaintEvents(): ComplaintEventRow[] {
+  return all<ComplaintEventRow>('SELECT * FROM complaint_events WHERE dm_sent = 0 ORDER BY id LIMIT 100');
+}
+
+export function markComplaintEventDm(id: number): void {
+  run('UPDATE complaint_events SET dm_sent = 1 WHERE id = ?', id);
+}
+
+/** Последние жалобы на этот ID (из отслеживаемых тем). */
+export function recentComplaintsFor(gameId: string, limit = 5): ComplaintThreadRow[] {
+  return all<ComplaintThreadRow>('SELECT * FROM complaint_threads WHERE offender_id = ? ORDER BY first_seen DESC LIMIT ?', gameId, limit);
+}
+
+export function pruneComplaintEvents(olderThanMs: number): void {
+  run('DELETE FROM complaint_events WHERE ts < ?', Date.now() - olderThanMs);
 }
 
 // ---------- статистика и аудит ----------

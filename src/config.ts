@@ -60,6 +60,18 @@ export const config = {
   forumBrowserClearance: bool('FORUM_BROWSER_CLEARANCE', true),
   forumBrowserPath: str('FORUM_BROWSER_PATH') || undefined,
 
+  /** Разделы жалоб, которые бот проверяет на жалобы против привязанных игровых ID. */
+  // Сервер Mirage: новые жалобы (899) и проверенные — со статусом (945).
+  complaintWatchUrls: str(
+    'COMPLAINT_WATCH_URLS',
+    ['899', '945'].map((id) => `${str('FORUM_BASE_URL', 'https://forum.grand-rp.su').replace(/\/+$/, '')}/forums/${id}/`).join(','),
+  )
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean),
+  complaintCheckMinutes: Math.max(3, int('COMPLAINT_CHECK_MINUTES', 10)),
+  /** Сколько страниц раздела жалоб просматривать при первом (глубоком) проходе. */
+  complaintScanPages: Math.min(10, Math.max(1, int('COMPLAINT_SCAN_PAGES', 3))),
 
   guildHourlyLimit: int('GUILD_HOURLY_LIMIT', 300),
   defaultUserHourlyLimit: int('DEFAULT_USER_HOURLY_LIMIT', 10),
@@ -78,12 +90,28 @@ export const config = {
 /** Источники, которые добавляются по умолчанию при /setup и в глобальную базу для ЛС. */
 export const DEFAULT_SOURCES: string[] = [
   `${config.forumBaseUrl}/forums/893/`, // Правила проекта (все подразделы: общие, госструктуры, криминал, мероприятия…)
-  `${config.forumBaseUrl}/threads/409510/`, // Правила подачи жалоб на игроков
-  `${config.forumBaseUrl}/forums/1010/`, // Жалобы на игроков
-  `${config.forumBaseUrl}/threads/410706/`, // Пример жалобы
+  `${config.forumBaseUrl}/threads/403338/`, // Правила подачи жалоб на игроков
+  // Сервер Mirage (биографии не берём — это анкеты, а не знания).
+  `${config.forumBaseUrl}/forums/899/`, // Жалобы на игроков (+ проверенные)
+  `${config.forumBaseUrl}/forums/900/`, // Жалобы на лидеров фракций
+  `${config.forumBaseUrl}/forums/898/`, // Жалобы на администраторов и помощников
+  `${config.forumBaseUrl}/forums/1357/`, // Обжалование наказаний
+  `${config.forumBaseUrl}/forums/1232/`, // Заявления на амнистию
+  `${config.forumBaseUrl}/forums/980/`, // Заявления
+  `${config.forumBaseUrl}/forums/905/`, // Правительство (суд, прокуратура, адвокатура…)
+  `${config.forumBaseUrl}/forums/929/`, // Законодательство
+  `${config.forumBaseUrl}/forums/1105/`, // Конгресс
+  `${config.forumBaseUrl}/forums/906/`, // Центральная полиция
+  `${config.forumBaseUrl}/forums/907/`, // Дорожная полиция
+  `${config.forumBaseUrl}/forums/908/`, // Национальная гвардия
+  `${config.forumBaseUrl}/forums/909/`, // EMS
+  `${config.forumBaseUrl}/forums/911/`, // ФРБ (+ CID)
+  `${config.forumBaseUrl}/forums/903/`, // Нелегальные организации (банды)
+  `${config.forumBaseUrl}/forums/910/`, // Радиостанция LifeInvader
+  `${config.forumBaseUrl}/forums/981/`, // Глобальные мероприятия
 ];
 
-export const COMPLAINTS_FORUM_URL = `${config.forumBaseUrl}/forums/1010/`;
+export const COMPLAINTS_FORUM_URL = `${config.forumBaseUrl}/forums/899/`;
 
 export function assertRuntimeConfig(): void {
   const missing: string[] = [];

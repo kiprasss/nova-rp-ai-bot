@@ -1,7 +1,9 @@
 import type { Client } from 'discord.js';
 import { DEFAULT_SOURCES, config } from './config.js';
-import { GLOBAL_SCOPE, addSource, getMeta, listGuilds, listSources } from './db/repo.js';
+import { GLOBAL_SCOPE, addSource, countPlayerIds, getMeta, listGuilds, listSources } from './db/repo.js';
+import { dispatchComplaintAlerts } from './discord/complaintAlerts.js';
 import { dispatchRuleUpdates } from './discord/ruleUpdates.js';
+import { watchComplaints } from './forum/complaintWatch.js';
 import { startRefresh } from './discord/settingsMenu.js';
 import { isRefreshing, refreshScope } from './forum/refresh.js';
 import { normalizeForumUrl } from './forum/url.js';
@@ -36,7 +38,22 @@ function tick(client: Client): void {
   }
 }
 
+/** Жалобы проверяем, только если есть кого уведомлять: привязанные ID или настроенный канал #ai-жалобы. */
+async function complaintTick(client: Client): Promise<void> {
+  const needed = countPlayerIds() > 0 || listGuilds().some((g) => g.complaints_channel_id);
+  if (!needed) return;
+  try {
+    await watchComplaints();
+    // (если форум закрыт защитой — watchComplaints сам пишет предупреждение в консоль)
+    await dispatchComplaintAlerts(client);
+  } catch (err) {
+    log.error('Ошибка проверки жалоб', err);
+  }
+}
+
 export function startScheduler(client: Client): NodeJS.Timeout {
   setTimeout(() => tick(client), 15_000);
+  setTimeout(() => void complaintTick(client), 30_000);
+  setInterval(() => void complaintTick(client), config.complaintCheckMinutes * 60_000);
   return setInterval(() => tick(client), TICK_MS);
 }

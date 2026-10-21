@@ -92,6 +92,7 @@ const COMMAND_LABELS: Record<(typeof BOT_COMMANDS)[number], string> = {
   faq: 'Быстрые ответы',
   помощь: 'Список команд',
   setupls: 'Личное меню в ЛС',
+  'мой-id': 'Уведомления о жалобах на свой ID',
 };
 
 const OP_SECTION: Record<string, Section> = {
@@ -939,7 +940,7 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
       if (!i.isButton()) return;
       await i.showModal(
         modal(`cfg:srcaddm:${guildId}`, 'Добавить источник', [
-          textInput('url', 'Ссылка на тему или раздел форума', { placeholder: `${config.forumBaseUrl}/forums/1010/`, max: 300 }),
+          textInput('url', 'Ссылка на тему или раздел форума', { placeholder: `${config.forumBaseUrl}/forums/899/`, max: 300 }),
         ]),
       );
       return;

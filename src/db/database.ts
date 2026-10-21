@@ -131,6 +131,33 @@ CREATE TABLE IF NOT EXISTS rule_events (
   ts INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS player_ids (
+  game_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS player_ids_user ON player_ids(user_id);
+
+CREATE TABLE IF NOT EXISTS complaint_threads (
+  url TEXT PRIMARY KEY,
+  offender_id TEXT,
+  title TEXT NOT NULL,
+  prefix TEXT,
+  last_post_ts INTEGER,
+  first_seen INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS complaint_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  url TEXT NOT NULL,
+  offender_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  prefix TEXT,
+  kind TEXT NOT NULL,
+  dm_sent INTEGER NOT NULL DEFAULT 0,
+  ts INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id TEXT,
@@ -174,6 +201,13 @@ function migrate(d: DatabaseSync): void {
       ['ai_threads', 'INTEGER NOT NULL DEFAULT 0'],
       ['ai_show_model', 'INTEGER NOT NULL DEFAULT 0'],
       ['ai_faq_first', 'INTEGER NOT NULL DEFAULT 1'],
+      ['complaints_channel_id', 'TEXT'],
+      ['last_complaint_event_id', 'INTEGER NOT NULL DEFAULT 0'],
+    ],
+    user_settings: [['complaint_dm', 'INTEGER NOT NULL DEFAULT 1']],
+    complaint_threads: [
+      ['author', 'TEXT'],
+      ['offender_nick', 'TEXT'],
     ],
     role_perms: [
       ['dm_access', 'INTEGER NOT NULL DEFAULT 1'],
