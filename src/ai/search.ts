@@ -88,10 +88,21 @@ export function tokenize(text: string): string[] {
 
 const PREFIX = '~';
 
+/** Насколько поднимать фрагмент, если слова запроса есть в заголовке его темы (до ×1.8 при полном совпадении). */
+const TITLE_WEIGHT = 0.8;
+
+const COMPLAINT_RULES = /правил|форм[аыу] подачи|регламент/i;
+
+/** Фрагмент — правила: сами правила или регламент раздела жалоб. */
+export function isRulesChunk(c: ChunkRow): boolean {
+  return Boolean(c.is_rules) || (Boolean(c.is_complaint) && COMPLAINT_RULES.test(c.title));
+}
+
 interface IndexedDoc {
   chunk: ChunkRow;
   tf: Map<string, number>;
   len: number;
+  titleTerms: Set<string>;
 }
 
 export interface SearchHit {
@@ -115,11 +126,12 @@ export class Bm25Index {
     this.df.clear();
     let total = 0;
     for (const chunk of chunks) {
-      const tokens = [...tokenize(chunk.title), ...tokenize(chunk.text)];
+      const titleTokens = tokenize(chunk.title);
+      const tokens = [...titleTokens, ...tokenize(chunk.text)];
       const tf = new Map<string, number>();
       for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
       for (const t of tf.keys()) this.df.set(t, (this.df.get(t) ?? 0) + 1);
-      this.docs.push({ chunk, tf, len: tokens.length });
+      this.docs.push({ chunk, tf, len: tokens.length, titleTerms: new Set(titleTokens) });
       total += tokens.length;
     }
     this.avgLen = this.docs.length ? total / this.docs.length : 1;
@@ -133,24 +145,36 @@ export class Bm25Index {
     const terms = [...new Set(tokenize(query))];
     if (!terms.length) return [];
     const n = this.docs.length;
+    const idfOf = (t: string): number => {
+      const df = this.df.get(t) ?? 0;
+      return Math.log(1 + (n - df + 0.5) / (df + 0.5));
+    };
+    const idfTotal = terms.reduce((sum, t) => sum + idfOf(t), 0) || 1;
     const hits: SearchHit[] = [];
     for (const d of this.docs) {
       if (filter && !filter(d.chunk)) continue;
       let score = 0;
       let matched = 0;
+      let titleIdf = 0;
       for (const t of terms) {
         const f = d.tf.get(t);
         if (!f) continue;
         matched++;
-        const df = this.df.get(t) ?? 0;
-        const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5));
+        const idf = idfOf(t);
+        if (d.titleTerms.has(t)) titleIdf += idf;
         const boost = POINT_TOKEN.test(t) ? 3 : t.startsWith(PREFIX) ? 0.5 : 1;
         score += boost * idf * ((f * (this.k1 + 1)) / (f + this.k1 * (1 - this.b + (this.b * d.len) / this.avgLen)));
       }
       if (!matched) continue;
       // Небольшой бонус за покрытие запроса и за документы с правилами.
       score *= 1 + matched / terms.length;
-      if (d.chunk.is_rules) score *= 1.25;
+      // Заголовок темы говорит, о чём она: «жалоба на игрока» → «Правила подачи жалоб на игроков», а не «…на администрацию».
+      // Доля считается по IDF слов запроса: частое «правила» есть почти в каждом заголовке и почти ничего не даёт.
+      score *= 1 + TITLE_WEIGHT * (titleIdf / idfTotal);
+      // Жалобы — разбор конкретных случаев: слова совпадают часто, а отвечают на общий вопрос редко.
+      // Регламент раздела жалоб («Правила подачи жалоб», «Форма подачи») — это правила, их не штрафуем.
+      if (isRulesChunk(d.chunk)) score *= 1.25;
+      else if (d.chunk.is_complaint) score *= 0.6;
       hits.push({ chunk: d.chunk, score });
     }
     return hits.sort((a, b) => b.score - a.score).slice(0, limit);
@@ -202,11 +226,15 @@ export function mergeHits(lists: SearchHit[][], limit = 6, minScore = 1.5): Sear
   return capPerDoc([...best.values()].sort((a, b) => b.score - a.score), limit, minScore);
 }
 
+/** Фрагменты слабее этой доли лучшего результата — случайные совпадения по одному слову. */
+const RELATIVE_CUTOFF = 0.55;
+
 function capPerDoc(hits: SearchHit[], limit: number, minScore: number): SearchHit[] {
   const out: SearchHit[] = [];
   const perDoc = new Map<string, number>();
+  const cutoff = Math.max(minScore, (hits[0]?.score ?? 0) * RELATIVE_CUTOFF);
   for (const h of hits) {
-    if (h.score < minScore) continue;
+    if (h.score < cutoff) continue;
     const n = perDoc.get(h.chunk.doc_url) ?? 0;
     if (n >= 3) continue; // не более 3 фрагментов из одной темы
     perDoc.set(h.chunk.doc_url, n + 1);
