@@ -133,7 +133,8 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   for (const h of hits) {
     fragments.push({ n: fragments.length + 1, title: h.chunk.title, url: h.chunk.post_url, text: h.chunk.text });
   }
-  if (!fragments.length) return { kind: 'nodata', text: NO_DATA };
+  // Без контекста AI всё равно отвечает (приветствие, общие вопросы), но правила без форума не придумывает — это в промпте.
+  if (!fragments.length && !creds) return { kind: 'nodata', text: NO_DATA };
 
   if (!creds) {
     return {

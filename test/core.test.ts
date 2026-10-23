@@ -142,6 +142,14 @@ describe('prompt', () => {
       assert.match(buildPrompt(style, 'short', 'q', frags).system, /\*\*Нет\*\*/, `пример Да/Нет: ${style}`);
     }
   });
+  it('без контекста промпт всё равно строится и запрещает выдумывать правила', () => {
+    for (const style of ['standard', 'claude', 'gemini', 'compact'] as const) {
+      const p = buildPrompt(style, 'short', 'привет', []);
+      assert.match(p.user, /ничего не найдено/, style);
+      assert.match(p.system, /не выдумывай|никогда не придумывай/i, style);
+      assert.doesNotMatch(p.system, /5\.4/, `в примере нет реального пункта: ${style}`);
+    }
+  });
   it('стиль подбирается по провайдеру и модели', () => {
     assert.equal(promptStyleFor('groq', 'llama-3.3-70b-versatile'), 'compact');
     assert.equal(promptStyleFor('anthropic', 'claude-haiku-5-5'), 'claude');
