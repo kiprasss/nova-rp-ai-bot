@@ -13,6 +13,7 @@
     "dev": "tsc -p tsconfig.json && node dist/src/index.js",
     "deploy": "node dist/src/deploy-commands.js",
     "kb:export": "node dist/src/export-kb.js",
+    "ask": "node dist/src/ask-cli.js",
     "lint": "eslint .",
     "test": "node --test \"dist/test/**/*.test.js\"",
     "check": "npm run lint && npm run build && npm test"
