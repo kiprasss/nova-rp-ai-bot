@@ -30,22 +30,33 @@ openDatabase(config.databasePath);
 importSeedIfEmpty();
 seedGlobalSources();
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
-  ],
-  partials: [Partials.Channel, Partials.Message],
-});
+// После неудачного login() discord.js уничтожает клиент (ws.destroyed = true навсегда): даже если следующая
+// попытка подключится, isReady() остаётся false и обрыв связи больше не переподключается. Поэтому на каждую
+// попытку входа — новый клиент.
+function createClient(): Client {
+  const c = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.DirectMessages,
+    ],
+    partials: [Partials.Channel, Partials.Message],
+  });
 
-client.once(Events.ClientReady, (c) => {
-  log.info(`Бот запущен как ${c.user.tag}. Серверов: ${c.guilds.cache.size}`);
-  c.user.setActivity('вопросы о NOVA RP | /помощь', { type: ActivityType.Listening });
-  startScheduler(c);
-  void syncCommands(c);
-});
+  c.once(Events.ClientReady, (ready) => {
+    log.info(`Бот запущен как ${ready.user.tag}. Серверов: ${ready.guilds.cache.size}`);
+    ready.user.setActivity('вопросы о NOVA RP | /помощь', { type: ActivityType.Listening });
+    startScheduler(ready);
+    void syncCommands(ready);
+  });
+  c.on(Events.InteractionCreate, (i) => void onInteraction(i));
+  c.on(Events.MessageCreate, (m) => void onMessage(c, m));
+  c.on(Events.Error, (err) => log.error('Ошибка клиента Discord', err));
+  return c;
+}
+
+let client = createClient();
 
 // Пульс для внешнего мониторинга (server-monitor.py): файл обновляется, только пока бот подключён к Discord.
 const heartbeatFile = join(dirname(config.databasePath), 'heartbeat.json');
@@ -57,10 +68,6 @@ setInterval(() => {
     log.warn('Не удалось записать heartbeat', err);
   }
 }, 30_000).unref();
-
-client.on(Events.InteractionCreate, (i) => void onInteraction(i));
-client.on(Events.MessageCreate, (m) => void onMessage(client, m));
-client.on(Events.Error, (err) => log.error('Ошибка клиента Discord', err));
 
 process.on('unhandledRejection', (err) => log.error('Необработанное отклонение промиса', err));
 process.on('uncaughtException', (err) => log.error('Необработанное исключение', err));
@@ -82,5 +89,6 @@ for (let attempt = 1; ; attempt++) {
     const delay = Math.min(60, attempt * 5);
     log.error(`Не удалось подключиться к Discord (попытка ${attempt}), повтор через ${delay} с`, err);
     await new Promise((r) => setTimeout(r, delay * 1000));
+    client = createClient();
   }
 }
