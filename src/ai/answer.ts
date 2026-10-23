@@ -4,7 +4,7 @@ import { getGuild, getUserSettings, listFaq, recordAiRequest } from '../db/repo.
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
-import { buildPrompt, citedNumbers, type ContextFragment } from './prompt.js';
+import { buildPrompt, citedNumbers, stripPointCitations, type ContextFragment } from './prompt.js';
 import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
 import { lookupRule } from './ruleLookup.js';
 import { termDefinitions } from './glossary.js';
@@ -70,6 +70,10 @@ export interface AskInput {
 export interface AskResult {
   kind: 'faq' | 'ai' | 'nodata' | 'notoken';
   text: string;
+  /** Фрагменты, переданные модели (для npm run ask -- --context). */
+  fragments?: ContextFragment[];
+  /** Поисковый запрос, который составил AI (null — переписать не удалось). */
+  rewritten?: string | null;
 }
 
 const NO_DATA =
@@ -94,7 +98,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   const creds = resolved ? await ensureAvailableModel(resolved) : null;
 
   // «Бот ищет сам»: AI переписывает вопрос (опечатки, сленг, синонимы), ищем по обоим вариантам.
-  const rewritten = creds && ai.rewrite ? await rewriteQuery(creds, question) : null;
+  const rewritten = creds && ai.rewrite ? await rewriteQuery(creds, question, ai.fallbackModel) : null;
   const searchText = rewritten ? `${question}\n${rewritten}` : question;
 
   const fragments: ContextFragment[] = [];
@@ -176,6 +180,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     recordAiRequest(input.guildId, input.userId, 'ask', false);
     throw err;
   }
+  answer = stripPointCitations(answer);
   const modelNote = ai.showModel ? `\n-# 🤖 ${PROVIDERS[creds.provider].label} · ${usedModel}` : '';
 
   let sources = '';
@@ -192,7 +197,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     answer = answer.replace(/\s?\[\d{1,2}\]/g, '');
   }
 
-  return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote };
+  return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten };
 }
 
 export interface GuildAiSettings {

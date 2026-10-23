@@ -1,5 +1,5 @@
 import { log } from '../util/logger.js';
-import { complete, type ProviderId } from './providers.js';
+import { AiError, complete, type ChatRequest, type ProviderId } from './providers.js';
 
 const SYSTEM = [
   'Ты помогаешь искать ответ в правилах GTA 5 RolePlay проекта NOVA RP.',
@@ -26,19 +26,23 @@ export interface RewriteCredentials {
 
 /**
  * «Бот ищет сам»: AI переписывает вопрос в поисковый запрос (опечатки, сленг, синонимы).
- * При любой ошибке возвращает null — тогда поиск идёт только по исходному вопросу.
+ * Если основная модель упёрлась в лимит или недоступна — пробуем резервную, как и для ответа.
+ * При любой другой ошибке возвращает null — тогда поиск идёт только по исходному вопросу.
  */
-export async function rewriteQuery(creds: RewriteCredentials, question: string): Promise<string | null> {
+export async function rewriteQuery(creds: RewriteCredentials, question: string, fallbackModel?: string | null): Promise<string | null> {
   const key = `${creds.provider}:${creds.model}:${question.trim().toLowerCase()}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
+  const req: ChatRequest = { system: SYSTEM, user: `Вопрос игрока: ${question}`, maxTokens: 80, temperature: 0 };
   try {
-    const raw = await complete(creds.provider, creds.token, creds.model, {
-      system: SYSTEM,
-      user: `Вопрос игрока: ${question}`,
-      maxTokens: 80,
-      temperature: 0,
-    });
+    let raw: string;
+    try {
+      raw = await complete(creds.provider, creds.token, creds.model, req);
+    } catch (err) {
+      const retryable = err instanceof AiError && (err.status === 0 || err.status === 404 || err.status === 429 || err.status >= 500);
+      if (!retryable || !fallbackModel || fallbackModel === creds.model) throw err;
+      raw = await complete(creds.provider, creds.token, fallbackModel, req);
+    }
     const line = raw
       .split('\n')
       .map((l) => l.trim())

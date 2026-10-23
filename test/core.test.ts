@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { matchFaq } from '../src/ai/faq.js';
-import { buildPrompt, citedNumbers } from '../src/ai/prompt.js';
+import { buildPrompt, citedNumbers, stripPointCitations } from '../src/ai/prompt.js';
 import { PROVIDERS, isReasoningModel, promptStyleFor, rankModels, stripReasoning } from '../src/ai/providers.js';
 import { diffRules } from '../src/forum/ruleDiff.js';
 import { isDeletableBotMessage, parseMessageRef } from '../src/commands/clean.js';
@@ -196,6 +196,10 @@ describe('prompt', () => {
   });
   it('находит ссылки на фрагменты', () => {
     assert.deepEqual(citedNumbers('Ответ [2] и ещё [1][2].'), [1, 2]);
+  });
+
+  it('убирает ссылки номерами пунктов, но не номерами фрагментов', () => {
+    assert.equal(stripPointCitations('Форма [1][1.1], видео [2.1]. Срок [1.1, 2.1, 3.1].'), 'Форма [1], видео. Срок.');
   });
 });
 
