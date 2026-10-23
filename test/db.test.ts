@@ -123,6 +123,7 @@ describe('база данных (node:sqlite)', () => {
         searchComplaints: true,
         showModel: false,
         faqFirst: true,
+        forumOnly: false,
       },
     );
     updateGuild('g1', { ai_tone: 'official', ai_max_tokens: 600, ai_fallback_model: 'llama-3.3-70b-versatile', ai_search_complaints: 0 });

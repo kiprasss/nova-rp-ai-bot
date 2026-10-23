@@ -103,7 +103,7 @@ const OP_SECTION: Record<string, Section> = {
   faqadd: 'faq', faqaddm: 'faq', faqdel: 'faq',
   ailen: 'aiset', aitemp: 'aiset', aictx: 'aiset', airew: 'aiset', aisrc: 'aiset', aiinst: 'aiset', aiinstm: 'aiset',
   aipage2: 'aiset', aitone: 'aiset', aimax: 'aiset', aifb: 'aiset',
-  aicmp: 'aiset', aiauto: 'aiset', aithr: 'aiset', aimdl: 'aiset', aifaq: 'aiset',
+  aicmp: 'aiset', aiauto: 'aiset', aithr: 'aiset', aimdl: 'aiset', aifaq: 'aiset', aiforum: 'aiset',
   wizapply: 'wizard',
 };
 
@@ -575,6 +575,7 @@ async function viewAiSettings2(guild: Guild, note?: string): Promise<BaseMessage
         `🧵 **Ответ в отдельной ветке:** ${onOff(g.ai_threads)} _(канал остаётся чистым)_`,
         `🤖 **Подпись с моделью:** ${onOff(g.ai_show_model)}`,
         `📌 **FAQ раньше AI:** ${onOff(g.ai_faq_first)}`,
+        `📖 **Только форум:** ${onOff(g.ai_forum_only)} _(вкл — без болтовни и общих знаний: отвечает только тем, что нашёл на форуме)_`,
       ]
         .filter((l, i) => i !== 0 || l)
         .join('\n'),
@@ -611,7 +612,11 @@ async function viewAiSettings2(guild: Guild, note?: string): Promise<BaseMessage
         toggle('aimdl', 'Подпись модели', g.ai_show_model, '🤖'),
         toggle('aifaq', 'FAQ первым', g.ai_faq_first, '📌'),
       ),
-      row(button(`cfg:open:${guild.id}:aiset`, 'Основные настройки AI', ButtonStyle.Secondary, '⬅️'), back(guild.id)),
+      row(
+        toggle('aiforum', 'Только форум', g.ai_forum_only, '📖'),
+        button(`cfg:open:${guild.id}:aiset`, 'Основные настройки AI', ButtonStyle.Secondary, '⬅️'),
+        back(guild.id),
+      ),
     ],
   };
 }
@@ -1117,9 +1122,12 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
     case 'aiauto':
     case 'aithr':
     case 'aimdl':
-    case 'aifaq': {
-      const col = ({ aicmp: 'ai_search_complaints', aiauto: 'ai_auto_reply', aithr: 'ai_threads', aimdl: 'ai_show_model', aifaq: 'ai_faq_first' } as const)[op];
-      const label = { aicmp: 'жалобы в поиске', aiauto: 'автоответ в #ai-помощник', aithr: 'ответ в ветке', aimdl: 'подпись модели', aifaq: 'FAQ первым' }[op];
+    case 'aifaq':
+    case 'aiforum': {
+      const col = (
+        { aicmp: 'ai_search_complaints', aiauto: 'ai_auto_reply', aithr: 'ai_threads', aimdl: 'ai_show_model', aifaq: 'ai_faq_first', aiforum: 'ai_forum_only' } as const
+      )[op];
+      const label = { aicmp: 'жалобы в поиске', aiauto: 'автоответ в #ai-помощник', aithr: 'ответ в ветке', aimdl: 'подпись модели', aifaq: 'FAQ первым', aiforum: 'только форум' }[op];
       const g = ensureGuildRow(guildId, config.defaultRefreshHours);
       const next = g[col] ? 0 : 1;
       updateGuild(guildId, { [col]: next });

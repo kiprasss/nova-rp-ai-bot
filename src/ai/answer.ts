@@ -144,7 +144,8 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     fragments.push({ n: fragments.length + 1, title: h.chunk.title, url: h.chunk.post_url, text: h.chunk.text, kind });
   }
   // Без контекста AI всё равно отвечает (приветствие, общие вопросы), но правила без форума не придумывает — это в промпте.
-  if (!fragments.length && !creds) return { kind: 'nodata', text: NO_DATA };
+  // В режиме «Только форум» отвечать не из чего — модель не вызываем.
+  if (!fragments.length && (!creds || ai.forumOnly)) return { kind: 'nodata', text: NO_DATA };
 
   if (!creds) {
     return {
@@ -161,7 +162,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   let answer: string;
   let usedModel = creds.model;
   try {
-    const prompt = buildPrompt(promptStyleFor(creds.provider, creds.model), length, question, fragments, extra);
+    const prompt = buildPrompt(promptStyleFor(creds.provider, creds.model), length, question, fragments, extra, ai.forumOnly);
     const request = {
       system: prompt.system,
       user: prompt.user,
@@ -216,6 +217,7 @@ export interface GuildAiSettings {
   searchComplaints: boolean;
   showModel: boolean;
   faqFirst: boolean;
+  forumOnly: boolean;
 }
 
 /** Стиль общения бота (меню «Настройки AI» → «Тон»). */
@@ -241,6 +243,7 @@ export function aiSettingsFor(guildId: string | null): GuildAiSettings {
     searchComplaints: (g?.ai_search_complaints ?? 1) === 1,
     showModel: (g?.ai_show_model ?? 0) === 1,
     faqFirst: (g?.ai_faq_first ?? 1) === 1,
+    forumOnly: (g?.ai_forum_only ?? 0) === 1,
   };
 }
 

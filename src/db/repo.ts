@@ -27,6 +27,8 @@ export interface GuildRow {
   ai_threads: number;
   ai_show_model: number;
   ai_faq_first: number;
+  /** 1 — «Только форум»: без болтовни и общих знаний, ответ только по найденным фрагментам. */
+  ai_forum_only: number;
   complaints_channel_id: string | null;
   last_complaint_event_id: number;
   settings_message_id: string | null;

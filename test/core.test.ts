@@ -386,6 +386,15 @@ describe('мастер настройки', () => {
     assert.equal(recommendedUserLimit(400), 10);
     assert.equal(recommendedUserLimit(5000), 5);
   });
+  it('режим «Только форум»: без общих знаний и болтовни', () => {
+    for (const style of ['standard', 'claude', 'gemini', 'compact'] as const) {
+      const human = buildPrompt(style, 'short', 'q', [{ n: 1, title: 'Т', url: 'u', text: 'x' }]);
+      const strict = buildPrompt(style, 'short', 'q', [{ n: 1, title: 'Т', url: 'u', text: 'x' }], null, true);
+      assert.match(human.system, /из общих знаний/i, style);
+      assert.match(strict.system, /Из общих знаний не отвечай совсем/, style);
+      assert.doesNotMatch(strict.system, /пошутить|по-человечески|Спрашивай 🙂/, style);
+    }
+  });
   it('инструкции сервера добавляются в промпт, но после основных правил', () => {
     const p = buildPrompt('standard', 'short', 'q', [], 'Обращайся на «вы»');
     assert.ok(p.system.indexOf('Обращайся на «вы»') > p.system.indexOf('Строгие правила'));
