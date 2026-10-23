@@ -5,7 +5,7 @@ import { openDatabase } from './db/database.js';
 import { answerQuestion } from './ai/answer.js';
 
 /**
- * npm run ask -- [--guild <id>] [--file вопросы.txt] [--context] ["вопрос" ...]
+ * npm run ask -- [--guild <id>] [--file вопросы.txt] [--context] [--delay сек] ["вопрос" ...]
  * Задать боту вопросы без Discord — тот же поиск, промпт и модель, что и на сервере.
  * Нужно для настройки промпта: спросили → посмотрели ответ → поправили src/ai/prompt.ts → снова спросили.
  * В файле — по одному вопросу на строку, строки с # пропускаются. --context — показать фрагменты, которые получила модель.
@@ -13,10 +13,12 @@ import { answerQuestion } from './ai/answer.js';
 const args = process.argv.slice(2);
 let guildId: string | null = null;
 let showContext = false;
+let delaySec = 5;
 const questions: string[] = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--guild') guildId = args[++i] ?? null;
   else if (args[i] === '--context') showContext = true;
+  else if (args[i] === '--delay') delaySec = Number(args[++i]) || 0;
   else if (args[i] === '--file') {
     for (const line of readFileSync(args[++i], 'utf8').split('\n')) {
       if (line.trim() && !line.trim().startsWith('#')) questions.push(line.trim());
@@ -48,5 +50,5 @@ for (const [i, question] of questions.entries()) {
     console.log(`--- ОШИБКА: ${err instanceof Error ? err.message : String(err)}`);
   }
   // Пауза между вопросами — чтобы не упираться в лимиты провайдера (токен общий с ботом).
-  if (i < questions.length - 1) await new Promise((r) => setTimeout(r, 5000));
+  if (i < questions.length - 1) await new Promise((r) => setTimeout(r, delaySec * 1000));
 }

@@ -4,12 +4,12 @@ import { getGuild, getUserSettings, listFaq, recordAiRequest } from '../db/repo.
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
-import { buildPrompt, citedNumbers, stripPointCitations, type ContextFragment } from './prompt.js';
+import { buildPrompt, citedNumbers, cleanCitations, type ContextFragment } from './prompt.js';
 import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
 import { lookupRule } from './ruleLookup.js';
 import { termDefinitions } from './glossary.js';
 import { rewriteQuery } from './queryRewrite.js';
-import { isRulesChunk, mergeHits, searchKnowledge } from './search.js';
+import { isRulesChunk, mergeHits, normalizedText, searchKnowledge } from './search.js';
 
 export interface Credentials {
   provider: ProviderId;
@@ -136,7 +136,10 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     ],
     ai.contextSize,
   );
+  // Пункт, уже добавленный как определение термина или по номеру, второй раз не передаём.
+  const seenText = new Set(fragments.map((f) => normalizedText(f.text)));
   for (const h of hits) {
+    if (seenText.has(normalizedText(h.chunk.text))) continue;
     const kind = isRulesChunk(h.chunk) ? 'rule' : h.chunk.is_complaint ? 'complaint' : 'forum';
     fragments.push({ n: fragments.length + 1, title: h.chunk.title, url: h.chunk.post_url, text: h.chunk.text, kind });
   }
@@ -180,7 +183,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     recordAiRequest(input.guildId, input.userId, 'ask', false);
     throw err;
   }
-  answer = stripPointCitations(answer);
+  answer = cleanCitations(answer);
   const modelNote = ai.showModel ? `\n-# 🤖 ${PROVIDERS[creds.provider].label} · ${usedModel}` : '';
 
   let sources = '';

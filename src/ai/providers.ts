@@ -114,7 +114,7 @@ export function promptStyleFor(provider: ProviderId, model: string): PromptStyle
 
 /** «Думающие» модели тратят часть лимита токенов на рассуждения — им нужен запас. */
 export function isReasoningModel(model: string): boolean {
-  return /(^|\/)(o\d|gpt-5|gpt-oss|deepseek-reasoner|qwen3|grok-3-mini|grok-4|.*-thinking)/i.test(model);
+  return /(^|\/)(o\d|gpt-5|gpt-oss|deepseek-reasoner|qwen3|grok-3-mini|grok-4|claude-(haiku|sonnet|opus|fable)-5|.*-thinking)/i.test(model);
 }
 
 export interface ChatRequest {
@@ -215,7 +215,15 @@ async function anthropic(token: string, model: string, req: ChatRequest) {
   const data = (await postJson(
     'https://api.anthropic.com/v1/messages',
     { 'x-api-key': token, 'anthropic-version': '2023-06-01' },
-    { model, max_tokens: req.maxTokens, system: req.system, messages: [{ role: 'user', content: req.user }] },
+    {
+      model,
+      max_tokens: req.maxTokens,
+      system: req.system,
+      messages: [{ role: 'user', content: req.user }],
+      // Новые Claude (5.x) думают по умолчанию, и рассуждения тратят тот же max_tokens. Для ответов по правилам
+      // хватает низкого уровня — так ответ быстрее, дешевле и не обрезается.
+      ...(isReasoningModel(model) ? { output_config: { effort: 'low' } } : {}),
+    },
   )) as any;
   const blocks: any[] = data?.content ?? [];
   return blocks

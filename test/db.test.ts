@@ -132,8 +132,9 @@ describe('база данных (node:sqlite)', () => {
     assert.equal(s.fallbackModel, 'llama-3.3-70b-versatile');
     assert.match(TONE_PROMPTS[s.tone], /на «вы»/);
     // «Жалобы в поиске» выключены — фрагменты из жалоб не попадают в результаты.
-    const withComplaints = searchKnowledge('провоцирование', 'g1', 6, 0.1, false).map((h) => h.chunk.doc_url);
-    const rulesOnly = searchKnowledge('провоцирование', 'g1', 6, 0.1, true).map((h) => h.chunk.doc_url);
+    // Запрос с «ник игрока» — чтобы жалоба точно проходила порог по баллу и проверялся именно фильтр.
+    const withComplaints = searchKnowledge('ник игрока провоцирование', 'g1', 6, 0.1, false).map((h) => h.chunk.doc_url);
+    const rulesOnly = searchKnowledge('ник игрока провоцирование', 'g1', 6, 0.1, true).map((h) => h.chunk.doc_url);
     assert.ok(withComplaints.includes('https://f/threads/2/'));
     assert.ok(!rulesOnly.includes('https://f/threads/2/'));
   });

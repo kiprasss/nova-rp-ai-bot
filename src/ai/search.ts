@@ -37,7 +37,13 @@ const SLANG: [RegExp, string][] = [
   [/(^|[^\p{L}])(чит\p{L}*|софт\p{L}*)(?=[^\p{L}]|$)/giu, ' стороннее ПО читы'],
   [/(^|[^\p{L}])(варн\p{L}*|warn)(?=[^\p{L}]|$)/giu, ' WARN предупреждение'],
   [/(^|[^\p{L}])(деморган\p{L}*|джайл\p{L}*|jail)(?=[^\p{L}]|$)/giu, ' JAIL'],
-  [/(^|[^\p{L}])(бан\p{L}*|ban)(?=[^\p{L}]|$)/giu, ' BAN блокировка'],
+  // Не «банк», «банкомат», «банда»: только сам бан и глаголы от него.
+  [/(^|[^\p{L}])(бан|бана|баны|бану|баном|банов|банить|банят|банил\p{L}*|ban)(?=[^\p{L}]|$)/giu, ' BAN блокировка'],
+  // «Меня забанили» — обычно ищут, как снять бан.
+  [/(^|[^\p{L}])(забан\p{L}*|разбан\p{L}*)(?=[^\p{L}]|$)/giu, ' BAN блокировка обжалование амнистия'],
+  // В правилах «RP» латиницей: «уход от RP», «NonRP».
+  [/(^|[^\p{L}])(рп|рпшн\p{L}*)(?=[^\p{L}]|$)/giu, ' RP RolePlay'],
+  [/(сколько\s+стоит|сколько\s+стоят|цен[аыу]|прайс\p{L}*)/giu, ' стоимость цена прайс'],
   [/(^|[^\p{L}])(акк|акка|акков|акки|твинк\p{L}*)(?=[^\p{L}]|$)/giu, ' аккаунт дополнительного аккаунта'],
   [/(^|[^\p{L}])(тачк\p{L}*|авто|машин\p{L}*|тс)(?=[^\p{L}]|$)/giu, ' транспорт Т/С'],
 ];
@@ -52,6 +58,8 @@ export function expandSlang(text: string): string {
 }
 
 const ENDINGS = [
+  // «вступление» ↔ «вступить», «оформление/оформлять» ↔ «оформить»: иначе основы расходятся на «л».
+  'ления', 'лению', 'лением', 'лении', 'ление', 'лять', 'ляет', 'лить',
   'иями', 'ями', 'ами', 'ией', 'иям', 'ием', 'иях', 'ость', 'ости', 'остью', 'ение', 'ения', 'ению', 'ением', 'ении',
   'ание', 'ания', 'анию', 'анием', 'ании', 'ться', 'тся', 'ешь', 'ете', 'ите', 'ишь', 'ает', 'яет', 'ует', 'ют', 'ут',
   'ать', 'ять', 'ить', 'еть', 'ого', 'его', 'ому', 'ему', 'ыми', 'ими', 'ый', 'ий', 'ой', 'ая', 'яя', 'ое', 'ее', 'ые',
@@ -79,9 +87,11 @@ export function tokenize(text: string): string[] {
       continue;
     }
     if (t.length < 2 || STOPWORDS.has(t)) continue;
-    out.push(stem(t));
-    // Префикс длинных русских слов: «провоцироват» (опечатка) и «провоцирование» совпадут по «~провоц».
-    if (t.length >= 7 && /[а-я]/.test(t)) out.push(`${PREFIX}${t.slice(0, 6)}`);
+    const s = stem(t);
+    out.push(s);
+    // Префикс основы длинных русских слов: «провоцироват» (опечатка) и «провоцирование» совпадут по «~провоц».
+    // От основы, а не от слова: у «вступить» и «вступление» основа одна, а первые 6 букв — разные.
+    if (s.length > 6 && /[а-я]/.test(s)) out.push(`${PREFIX}${s.slice(0, 6)}`);
   }
   return out;
 }
@@ -214,25 +224,47 @@ export function searchKnowledge(query: string, scope: string | null, limit = 6, 
   return capPerDoc(hits, limit, minScore);
 }
 
-/** Объединяет результаты нескольких поисков (по исходному и переписанному вопросу): у фрагмента берётся лучший балл. */
-export function mergeHits(lists: SearchHit[][], limit = 6, minScore = 1.5): SearchHit[] {
-  const best = new Map<number, SearchHit>();
+/**
+ * Объединяет результаты нескольких поисков (по исходному и переписанному вопросу).
+ * Баллы каждого поиска делятся на его лучший балл и складываются: длинный переписанный запрос даёт баллы выше
+ * и иначе вытеснял бы точные совпадения с вопросом, а фрагмент, найденный обоими поисками, — самый надёжный.
+ * Одинаковые по тексту фрагменты (пункт из разных версий темы) остаются в одном экземпляре.
+ */
+export function mergeHits(lists: SearchHit[][], limit = 6): SearchHit[] {
+  const merged = new Map<number, SearchHit>();
   for (const list of lists) {
+    const top = list[0]?.score;
+    if (!top) continue;
     for (const h of list) {
-      const prev = best.get(h.chunk.id);
-      if (!prev || prev.score < h.score) best.set(h.chunk.id, h);
+      const prev = merged.get(h.chunk.id);
+      merged.set(h.chunk.id, { chunk: h.chunk, score: (prev?.score ?? 0) + h.score / top });
     }
   }
-  return capPerDoc([...best.values()].sort((a, b) => b.score - a.score), limit, minScore);
+  const seenText = new Set<string>();
+  const unique = [...merged.values()]
+    .sort((a, b) => b.score - a.score)
+    .filter((h) => {
+      const key = normalizedText(h.chunk.text);
+      if (seenText.has(key)) return false;
+      seenText.add(key);
+      return true;
+    });
+  // Слабые совпадения уже отсеяны в каждом поиске (searchKnowledge), здесь только лимит и не больше 3 фрагментов из темы.
+  return capPerDoc(unique, limit, 0, false);
+}
+
+/** Текст фрагмента для сравнения на дубли: без пробелов и регистра. */
+export function normalizedText(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300);
 }
 
 /** Фрагменты слабее этой доли лучшего результата — случайные совпадения по одному слову. */
 const RELATIVE_CUTOFF = 0.55;
 
-function capPerDoc(hits: SearchHit[], limit: number, minScore: number): SearchHit[] {
+function capPerDoc(hits: SearchHit[], limit: number, minScore: number, relative = true): SearchHit[] {
   const out: SearchHit[] = [];
   const perDoc = new Map<string, number>();
-  const cutoff = Math.max(minScore, (hits[0]?.score ?? 0) * RELATIVE_CUTOFF);
+  const cutoff = Math.max(minScore, relative ? (hits[0]?.score ?? 0) * RELATIVE_CUTOFF : 0);
   for (const h of hits) {
     if (h.score < cutoff) continue;
     const n = perDoc.get(h.chunk.doc_url) ?? 0;

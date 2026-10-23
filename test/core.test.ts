@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { matchFaq } from '../src/ai/faq.js';
-import { buildPrompt, citedNumbers, stripPointCitations } from '../src/ai/prompt.js';
+import { buildPrompt, citedNumbers, cleanCitations } from '../src/ai/prompt.js';
 import { PROVIDERS, isReasoningModel, promptStyleFor, rankModels, stripReasoning } from '../src/ai/providers.js';
 import { diffRules } from '../src/forum/ruleDiff.js';
 import { isDeletableBotMessage, parseMessageRef } from '../src/commands/clean.js';
@@ -88,27 +88,41 @@ describe('search', () => {
     assert.equal(idx.search(expandSlang('можна ли провоцироват гос сотрудника?'), 3)[0].chunk.id, 1);
   });
 
-  it('объединяет результаты нескольких поисков', () => {
+  it('объединяет результаты нескольких поисков: найденное обоими — выше', () => {
     const a = chunk(1, 'А', 'x');
     const b = chunk(2, 'Б', 'y');
     const merged = mergeHits(
       [
         [{ chunk: a, score: 2 }],
         [
-          { chunk: b, score: 5 },
-          { chunk: a, score: 3 },
+          { chunk: b, score: 50 },
+          { chunk: a, score: 30 },
         ],
       ],
       6,
-      1,
     );
     assert.deepEqual(
       merged.map((h) => [h.chunk.id, h.score]),
       [
-        [2, 5],
-        [1, 3],
+        [1, 1.6],
+        [2, 1],
       ],
     );
+  });
+
+  it('убирает одинаковые по тексту фрагменты', () => {
+    const a = chunk(1, 'А', 'Пункт 4.2: DriveBy (DB)');
+    const b = chunk(2, 'А', 'Пункт  4.2: DriveBy (DB) ');
+    assert.equal(mergeHits([[{ chunk: a, score: 2 }, { chunk: b, score: 2 }]], 6).length, 1);
+  });
+
+  it('«банк» и «банкомат» — не бан', () => {
+    assert.ok(!expandSlang('ограбление банка').includes('BAN'));
+    assert.ok(!expandSlang('грабить банкомат').includes('BAN'));
+    assert.ok(expandSlang('меня забанили').includes('обжалование'));
+    assert.ok(expandSlang('уход от рп').includes('RP'));
+    assert.ok(expandSlang('сколько стоит лечение').includes('стоимость'));
+    assert.ok(expandSlang('дали бан').includes('BAN'));
   });
 
   it('фильтр по области поиска', () => {
@@ -178,6 +192,8 @@ describe('prompt', () => {
     assert.equal(isReasoningModel('deepseek-reasoner'), true);
     assert.equal(isReasoningModel('openai/gpt-oss-120b'), true);
     assert.equal(isReasoningModel('o4-mini'), true);
+    assert.equal(isReasoningModel('claude-haiku-5-5'), true);
+    assert.equal(isReasoningModel('claude-haiku-4-5'), false);
     assert.equal(isReasoningModel('gpt-4o-mini'), false);
     assert.equal(isReasoningModel('llama-3.3-70b-versatile'), false);
     assert.equal(stripReasoning('<think>хм</think>\nОтвет [1]'), 'Ответ [1]');
@@ -198,8 +214,10 @@ describe('prompt', () => {
     assert.deepEqual(citedNumbers('Ответ [2] и ещё [1][2].'), [1, 2]);
   });
 
-  it('убирает ссылки номерами пунктов, но не номерами фрагментов', () => {
-    assert.equal(stripPointCitations('Форма [1][1.1], видео [2.1]. Срок [1.1, 2.1, 3.1].'), 'Форма [1], видео. Срок.');
+  it('чистит ссылки: номера пунктов убирает, списки разбивает', () => {
+    assert.equal(cleanCitations('Форма [1][1.1], видео [2.1]. Срок [1.1, 2.1, 3.1].'), 'Форма [1], видео. Срок.');
+    assert.equal(cleanCitations('Рейд [1, 5], досмотр [2], [3].'), 'Рейд [1][5], досмотр [2][3].');
+    assert.deepEqual(citedNumbers(cleanCitations('Рейд [1, 5].')), [1, 5]);
   });
 });
 
@@ -351,6 +369,7 @@ describe('термины RP', () => {
   it('узнаёт ДМ, ТК, СК, МГ кириллицей и латиницей', () => {
     assert.deepEqual(detectTerms('что такое дм?').map((t) => t.abbr), ['DM']);
     assert.deepEqual(detectTerms('что значит TK и SK').map((t) => t.abbr), ['SK', 'TK']);
+    assert.deepEqual(detectTerms('что такое уход от рп?').map((t) => t.abbr), ['уход от RP']);
     assert.deepEqual(detectTerms('мг это что').map((t) => t.abbr), ['MG']);
     assert.deepEqual(detectTerms('дмить можно?').map((t) => t.abbr), ['DM']);
     assert.equal(detectTerms('дмитрий привет').length, 0);

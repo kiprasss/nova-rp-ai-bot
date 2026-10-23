@@ -4,7 +4,7 @@ import { GLOBAL_SCOPE, docUrlsForScope, rulesLike, type RuleRow } from '../db/re
  * RP-термины: как их пишут игроки (кириллицей, латиницей, полностью) → аббревиатура и полное
  * название, как в правилах («DeathMatch (DM) — …»).
  */
-export const TERMS: { abbr: string; name: string; aliases: string[] }[] = [
+export const TERMS: { abbr: string; name: string; aliases: string[]; /** Свой шаблон LIKE, если термин в правилах не в виде «Название (ABBR)». */ like?: string }[] = [
   { abbr: 'DM', name: 'DeathMatch', aliases: ['дм', 'dm', 'дмить', 'дмят', 'дмил', 'deathmatch', 'дезматч'] },
   { abbr: 'DB', name: 'DriveBy', aliases: ['дб', 'db', 'driveby', 'драйвбай', 'драйв бай'] },
   { abbr: 'PG', name: 'PowerGaming', aliases: ['пг', 'pg', 'powergaming', 'павергейминг', 'пауэргейминг'] },
@@ -17,6 +17,12 @@ export const TERMS: { abbr: string; name: string; aliases: string[] }[] = [
   { abbr: 'NonRP', name: 'NonRP', aliases: ['нрп', 'нонрп', 'нон рп', 'nonrp', 'non rp'] },
   { abbr: 'OOC', name: 'OOC', aliases: ['оос', 'ooc', 'ноос'] },
   { abbr: 'IC', name: 'IC', aliases: ['ic', 'айси'] },
+  {
+    abbr: 'уход от RP',
+    name: 'уход от RP',
+    aliases: ['уход от рп', 'уход от rp', 'уходить от рп', 'уходит от рп', 'ушел от рп', 'уход с рп', 'уход от roleplay'],
+    like: '%уходить от RP%',
+  },
 ];
 
 /** Какие термины упомянуты в вопросе (по целым словам). */
@@ -39,7 +45,9 @@ export function termDefinitions(question: string, scope: string | null, perTerm 
   }
   const out: RuleRow[] = [];
   for (const t of terms) {
-    const candidates = [...rulesLike(`%(${t.abbr})%`), ...rulesLike(`${t.name}%`), ...rulesLike(`%${t.name} (%`)];
+    const candidates = t.like
+      ? rulesLike(t.like)
+      : [...rulesLike(`%(${t.abbr})%`), ...rulesLike(`${t.name}%`), ...rulesLike(`%${t.name} (%`)];
     const seen = new Set<number>();
     const picked = candidates
       .filter((r) => !r.is_complaint && !seen.has(r.id) && seen.add(r.id))

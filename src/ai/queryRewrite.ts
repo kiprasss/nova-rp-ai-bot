@@ -33,7 +33,8 @@ export async function rewriteQuery(creds: RewriteCredentials, question: string, 
   const key = `${creds.provider}:${creds.model}:${question.trim().toLowerCase()}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
-  const req: ChatRequest = { system: SYSTEM, user: `Вопрос игрока: ${question}`, maxTokens: 80, temperature: 0 };
+  // Запас для «думающих» моделей (gpt-oss, qwen3): их рассуждения тоже тратят лимит, и при 80 токенах ответ иногда пустой.
+  const req: ChatRequest = { system: SYSTEM, user: `Вопрос игрока: ${question}`, maxTokens: 160, temperature: 0 };
   try {
     let raw: string;
     try {
