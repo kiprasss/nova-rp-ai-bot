@@ -154,7 +154,12 @@ function claude(length: AnswerLength, question: string, fragments: ContextFragme
   const ctx = fragments.length
     ? fragments.map((f) => `<fragment n="${f.n}" title="${label(f).replace(/["<>]/g, "'")}">\n${f.text}\n</fragment>`).join('\n')
     : NO_CONTEXT;
-  return { system, user: `<context>\n${ctx}\n</context>\n\n<question>\n${question}\n</question>`, temperature: 0.4 };
+  // Haiku без напоминания в конце пишет длиннее заданного и задаёт встречные вопросы.
+  const reminder =
+    (length === 'short' ? 'Ответ — не длиннее 5 предложений: только главное (пункт, наказание, что делать), без второстепенных пунктов. ' : '') +
+    'Без встречных вопросов в конце. **Да**/**Нет** в начале — только на вопросы «можно ли / накажут ли / запрещено ли»; ' +
+    'на «сколько дают / что будет / что такое / как» — без **Да**/**Нет**, сразу ответ.';
+  return { system, user: `<context>\n${ctx}\n</context>\n\n<question>\n${question}\n</question>\n\n${reminder}`, temperature: 0.4 };
 }
 
 /** Gemini: склонен к длинным ответам и Markdown-заголовкам — явно ограничиваем стиль. */
