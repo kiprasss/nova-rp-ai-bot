@@ -142,6 +142,7 @@ function claude(length: AnswerLength, question: string, fragments: ContextFragme
     '<rules>',
     ...core(forumOnly).map((r) => `- ${r}`),
     `- ${formatRule(length)}`,
+    '- Без заголовков (#) и без пересказа вопроса или всего контекста — только то, что отвечает на вопрос.',
     '</rules>',
     '',
     '<example>',

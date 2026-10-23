@@ -160,7 +160,12 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
     throw new AiError(0, 'Не удалось связаться с AI-провайдером (таймаут или нет сети).', String(err));
   }
   const text = await res.text();
-  if (!res.ok) throw new AiError(res.status, userMessageFor(res.status), `HTTP ${res.status}: ${text.slice(0, 500)}`);
+  if (!res.ok) {
+    // Закончились кредиты: Anthropic отвечает 400, OpenAI — 429 insufficient_quota. Иначе игрок увидит «проверьте модель».
+    const noCredits = /credit balance is too low|insufficient_quota/i.test(text);
+    const message = noCredits ? 'На аккаунте AI-провайдера закончились кредиты — администратору нужно пополнить баланс.' : userMessageFor(res.status);
+    throw new AiError(res.status, message, `HTTP ${res.status}: ${text.slice(0, 500)}`);
+  }
   try {
     return JSON.parse(text);
   } catch {

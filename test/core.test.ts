@@ -164,6 +164,7 @@ describe('prompt', () => {
     assert.match(buildPrompt('claude', 'short', 'q', frags).user, /<fragment n="1"/);
     assert.match(buildPrompt('compact', 'short', 'q', frags).user, /Ответь на русском/);
     assert.match(buildPrompt('gemini', 'short', 'q', frags).system, /Не используй заголовки/);
+    assert.match(buildPrompt('claude', 'short', 'q', frags).system, /Без заголовков/);
     for (const style of ['standard', 'claude', 'gemini', 'compact'] as const) {
       assert.match(buildPrompt(style, 'short', 'q', frags).system, /\*\*Нет\*\*/, `пример Да/Нет: ${style}`);
     }
