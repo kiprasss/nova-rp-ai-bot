@@ -4,7 +4,15 @@ import { GLOBAL_SCOPE, docUrlsForScope, rulesLike, type RuleRow } from '../db/re
  * RP-термины: как их пишут игроки (кириллицей, латиницей, полностью) → аббревиатура и полное
  * название, как в правилах («DeathMatch (DM) — …»).
  */
-export const TERMS: { abbr: string; name: string; aliases: string[]; /** Свой шаблон LIKE, если термин в правилах не в виде «Название (ABBR)». */ like?: string }[] = [
+export const TERMS: {
+  abbr: string;
+  name: string;
+  aliases: string[];
+  /** Свой шаблон LIKE, если термин в правилах не в виде «Название (ABBR)». */
+  like?: string;
+  /** Только на вопрос-определение («что такое рп»): слово встречается почти в каждом вопросе. */
+  definitionOnly?: boolean;
+}[] = [
   { abbr: 'DM', name: 'DeathMatch', aliases: ['дм', 'dm', 'дмить', 'дмят', 'дмил', 'deathmatch', 'дезматч'] },
   { abbr: 'DB', name: 'DriveBy', aliases: ['дб', 'db', 'driveby', 'драйвбай', 'драйв бай'] },
   { abbr: 'PG', name: 'PowerGaming', aliases: ['пг', 'pg', 'powergaming', 'павергейминг', 'пауэргейминг'] },
@@ -18,6 +26,13 @@ export const TERMS: { abbr: string; name: string; aliases: string[]; /** Сво�
   { abbr: 'OOC', name: 'OOC', aliases: ['оос', 'ooc', 'ноос'] },
   { abbr: 'IC', name: 'IC', aliases: ['ic', 'айси'] },
   {
+    abbr: 'RP',
+    name: 'RolePlay',
+    aliases: ['рп', 'rp', 'roleplay', 'role play', 'ролеплей', 'ролплей', 'рол плей'],
+    like: '%RolePlay (RP)%',
+    definitionOnly: true,
+  },
+  {
     abbr: 'уход от RP',
     name: 'уход от RP',
     aliases: ['уход от рп', 'уход от rp', 'уходить от рп', 'уходит от рп', 'ушел от рп', 'уход с рп', 'уход от roleplay'],
@@ -25,10 +40,16 @@ export const TERMS: { abbr: string; name: string; aliases: string[]; /** Сво�
   },
 ];
 
+const DEFINITION_QUESTION = /что\s+(такое|значит|означает|это)|кто\s+так(ой|ие|ая)|расшифр|определени|значение\s+слова/i;
+
 /** Какие термины упомянуты в вопросе (по целым словам). */
 export function detectTerms(question: string): (typeof TERMS)[number][] {
   const q = ` ${question.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
-  return TERMS.filter((t) => t.aliases.some((a) => q.includes(` ${a} `)));
+  const isDefinition = DEFINITION_QUESTION.test(q);
+  const found = TERMS.filter((t) => (!t.definitionOnly || isDefinition) && t.aliases.some((a) => q.includes(` ${a} `)));
+  // «Что такое уход от рп / дм в рп» — спрашивают о конкретном термине, общее определение RP не нужно.
+  const specific = found.filter((t) => !t.definitionOnly);
+  return specific.length ? specific : found;
 }
 
 /**

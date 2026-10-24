@@ -371,6 +371,9 @@ describe('термины RP', () => {
     assert.deepEqual(detectTerms('что такое дм?').map((t) => t.abbr), ['DM']);
     assert.deepEqual(detectTerms('что значит TK и SK').map((t) => t.abbr), ['SK', 'TK']);
     assert.deepEqual(detectTerms('что такое уход от рп?').map((t) => t.abbr), ['уход от RP']);
+    assert.deepEqual(detectTerms('что такое рп?').map((t) => t.abbr), ['RP']);
+    assert.deepEqual(detectTerms('кто такой рп').map((t) => t.abbr), ['RP']);
+    assert.deepEqual(detectTerms('можно ли нарушать рп в зз').map((t) => t.abbr), []);
     assert.deepEqual(detectTerms('мг это что').map((t) => t.abbr), ['MG']);
     assert.deepEqual(detectTerms('дмить можно?').map((t) => t.abbr), ['DM']);
     assert.equal(detectTerms('дмитрий привет').length, 0);
