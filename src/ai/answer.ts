@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { secrets } from '../crypto.js';
-import { getGuild, getUserSettings, listFaq, recordAiRequest } from '../db/repo.js';
+import { getGuild, getUserSettings, listFaq, recordAiRequest, rulesForDoc } from '../db/repo.js';
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
@@ -9,7 +9,7 @@ import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor,
 import { lookupRule } from './ruleLookup.js';
 import { termDefinitions } from './glossary.js';
 import { rewriteQuery } from './queryRewrite.js';
-import { isRulesChunk, mergeHits, normalizedText, searchKnowledge } from './search.js';
+import { isRulesChunk, mergeHits, normalizedText, searchKnowledge, type SearchHit } from './search.js';
 
 export interface Credentials {
   provider: ProviderId;
@@ -138,7 +138,13 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   );
   // Пункт, уже добавленный как определение термина или по номеру, второй раз не передаём.
   const seenText = new Set(fragments.map((f) => normalizedText(f.text)));
+  const whole = wholeRulesDoc(hits);
+  if (whole) {
+    fragments.push({ n: fragments.length + 1, title: whole.title, url: whole.url, text: whole.text, kind: 'rule' });
+    for (const r of whole.rules) seenText.add(normalizedText(`Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}`));
+  }
   for (const h of hits) {
+    if (whole && h.chunk.doc_url === whole.docUrl) continue;
     if (seenText.has(normalizedText(h.chunk.text))) continue;
     const kind = isRulesChunk(h.chunk) ? 'rule' : h.chunk.is_complaint ? 'complaint' : 'forum';
     fragments.push({ n: fragments.length + 1, title: h.chunk.title, url: h.chunk.post_url, text: h.chunk.text, kind });
@@ -202,6 +208,31 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   }
 
   return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten };
+}
+
+/** Короткие правила (мероприятия, события) передаём целиком: ответ часто в пункте, где нет слов из вопроса. */
+const WHOLE_DOC_MAX_CHARS = 4500;
+
+/**
+ * Правила, о которых вопрос: лучший результат поиска или не меньше двух фрагментов из одной темы.
+ * Поиск находит тему по названию («станок для печати денег»), но из её пунктов берёт случайные:
+ * «каким оружием нельзя» — а в пункте 1.6 написано «пулемёты и снайперские винтовки», без слова «оружие».
+ */
+function wholeRulesDoc(hits: SearchHit[]) {
+  const counts = new Map<string, number>();
+  for (const h of hits) if (isRulesChunk(h.chunk)) counts.set(h.chunk.doc_url, (counts.get(h.chunk.doc_url) ?? 0) + 1);
+  const candidates = hits
+    .filter((h, i) => isRulesChunk(h.chunk) && (i === 0 || (counts.get(h.chunk.doc_url) ?? 0) >= 2))
+    .map((h) => h.chunk.doc_url);
+  for (const docUrl of new Set(candidates)) {
+    const rules = rulesForDoc(docUrl).filter((r) => !r.is_complaint);
+    if (rules.length < 2) continue;
+    const lines = rules.map((r) => `Пункт ${r.point}: ${r.text}${r.punishment ? ` Наказание: ${r.punishment}` : ''}`);
+    const text = lines.join('\n');
+    if (text.length > WHOLE_DOC_MAX_CHARS) continue;
+    return { docUrl, title: rules[0].doc_title, url: rules[0].post_url, text, rules };
+  }
+  return null;
 }
 
 export interface GuildAiSettings {

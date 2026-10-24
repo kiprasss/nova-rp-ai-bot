@@ -198,6 +198,8 @@ describe('prompt', () => {
     assert.equal(isReasoningModel('gpt-4o-mini'), false);
     assert.equal(isReasoningModel('llama-3.3-70b-versatile'), false);
     assert.equal(stripReasoning('<think>хм</think>\nОтвет [1]'), 'Ответ [1]');
+    assert.equal(stripReasoning('<analysis>про станок, [1]</analysis>\n<answer>\nПункт 1.6 [1].\n</answer>'), 'Пункт 1.6 [1].');
+    assert.equal(stripReasoning('<analysis>черновик</analysis>\nОтвет'), 'Ответ');
   });
   it('список моделей от провайдера: без не-чат моделей, известные — первыми', () => {
     const ranked = rankModels('groq', [

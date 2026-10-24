@@ -238,11 +238,16 @@ async function anthropic(token: string, model: string, req: ChatRequest) {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-/** Убирает рассуждения <think>…</think>, которые некоторые открытые модели пишут прямо в ответ. */
+/**
+ * Убирает рассуждения <think>…</think>, которые некоторые открытые модели пишут прямо в ответ,
+ * и черновик <analysis>, который просит промпт Claude: игроку — только то, что в <answer>.
+ */
 export function stripReasoning(text: string): string {
+  const answer = /<answer>([\s\S]*?)(?:<\/answer>|$)/i.exec(text);
+  if (answer) text = answer[1];
   return text
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/^[\s\S]*?<\/think>/i, '')
+    .replace(/<(think|analysis)>[\s\S]*?<\/\1>/gi, '')
+    .replace(/^[\s\S]*?<\/(think|analysis)>/i, '')
     .trim();
 }
 
