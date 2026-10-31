@@ -55,6 +55,8 @@ export interface RolePerm {
   see_settings: number;
   /** Запрещённые команды через запятую, например «жалоба,faq». */
   blocked_commands: string;
+  /** Сколько игровых ID можно привязать (/мой-id), 0 — без лимита. */
+  max_player_ids: number;
 }
 
 /** Права, связанные с AI и настройками. */
@@ -83,6 +85,7 @@ export function newRolePerm(guildId: string, roleId: string, defaultLimit: numbe
     can_write: 1,
     see_settings: 0,
     blocked_commands: '',
+    max_player_ids: DEFAULT_MAX_IDS_PER_USER,
     ...patch,
   };
 }
@@ -214,13 +217,14 @@ export function getRolePerm(guildId: string, roleId: string): RolePerm | undefin
 export function upsertRolePerm(p: RolePerm): void {
   run(
     `INSERT INTO role_perms (guild_id, role_id, can_ask, any_channel, manage_sources, manage_ai, view_logs, hourly_limit,
-       dm_access, see_channels, can_write, see_settings, blocked_commands)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       dm_access, see_channels, can_write, see_settings, blocked_commands, max_player_ids)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(guild_id, role_id) DO UPDATE SET
        can_ask = excluded.can_ask, any_channel = excluded.any_channel, manage_sources = excluded.manage_sources,
        manage_ai = excluded.manage_ai, view_logs = excluded.view_logs, hourly_limit = excluded.hourly_limit,
        dm_access = excluded.dm_access, see_channels = excluded.see_channels, can_write = excluded.can_write,
-       see_settings = excluded.see_settings, blocked_commands = excluded.blocked_commands`,
+       see_settings = excluded.see_settings, blocked_commands = excluded.blocked_commands,
+       max_player_ids = excluded.max_player_ids`,
     p.guild_id,
     p.role_id,
     p.can_ask,
@@ -234,6 +238,7 @@ export function upsertRolePerm(p: RolePerm): void {
     p.can_write,
     p.see_settings,
     p.blocked_commands,
+    p.max_player_ids,
   );
 }
 
@@ -562,7 +567,8 @@ export function saveUserSettings(s: UserSettingsRow): void {
 
 // ---------- игровые ID и жалобы ----------
 
-export const MAX_IDS_PER_USER = 3;
+/** Лимит ID, если у пользователя нет настроенных ролей ни на одном сервере. */
+export const DEFAULT_MAX_IDS_PER_USER = 3;
 
 export function listPlayerIds(userId: string): string[] {
   return all<{ game_id: string }>('SELECT game_id FROM player_ids WHERE user_id = ? ORDER BY created_at', userId).map((r) => r.game_id);
@@ -572,11 +578,12 @@ export function ownerOfGameId(gameId: string): string | null {
   return get<{ user_id: string }>('SELECT user_id FROM player_ids WHERE game_id = ?', gameId)?.user_id ?? null;
 }
 
-export function addPlayerId(userId: string, gameId: string): 'ok' | 'taken' | 'limit' | 'exists' {
+/** limit — сколько ID можно привязать (0 — без лимита), см. playerIdLimit(). */
+export function addPlayerId(userId: string, gameId: string, limit: number): 'ok' | 'taken' | 'limit' | 'exists' {
   const owner = ownerOfGameId(gameId);
   if (owner === userId) return 'exists';
   if (owner) return 'taken';
-  if (listPlayerIds(userId).length >= MAX_IDS_PER_USER) return 'limit';
+  if (limit > 0 && listPlayerIds(userId).length >= limit) return 'limit';
   run('INSERT INTO player_ids (game_id, user_id, created_at) VALUES (?, ?, ?)', gameId, userId, Date.now());
   return 'ok';
 }

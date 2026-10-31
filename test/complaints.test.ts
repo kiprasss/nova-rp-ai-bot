@@ -38,12 +38,14 @@ describe('жалобы на игровые ID', () => {
   });
 
   it('привязка: один ID — один пользователь, не больше 3 на человека', () => {
-    assert.equal(addPlayerId('u1', '54321'), 'ok');
-    assert.equal(addPlayerId('u1', '54321'), 'exists');
-    assert.equal(addPlayerId('u2', '54321'), 'taken');
-    assert.equal(addPlayerId('u1', '1'), 'ok');
-    assert.equal(addPlayerId('u1', '2'), 'ok');
-    assert.equal(addPlayerId('u1', '3'), 'limit');
+    assert.equal(addPlayerId('u1', '54321', 3), 'ok');
+    assert.equal(addPlayerId('u1', '54321', 3), 'exists');
+    assert.equal(addPlayerId('u2', '54321', 3), 'taken');
+    assert.equal(addPlayerId('u1', '1', 3), 'ok');
+    assert.equal(addPlayerId('u1', '2', 3), 'ok');
+    assert.equal(addPlayerId('u1', '3', 3), 'limit');
+    assert.equal(addPlayerId('u1', '3', 0), 'ok', '0 — без лимита');
+    assert.equal(removePlayerId('3', 'u1'), true);
     assert.equal(ownerOfGameId('54321'), 'u1');
     assert.equal(removePlayerId('54321', 'u2'), false);
     assert.equal(removePlayerId('2', 'u1'), true);

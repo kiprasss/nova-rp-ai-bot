@@ -72,7 +72,7 @@ export const commandDefinitions: RESTPostAPIChatInputApplicationCommandsJSONBody
     .addSubcommand((s) =>
       s
         .setName('добавить')
-        .setDescription('Привязать свой игровой ID (до 3)')
+        .setDescription('Привязать свой игровой ID')
         .addStringOption((o) => o.setName('id').setDescription('Ваш игровой ID (только цифры)').setRequired(true).setMaxLength(7)),
     )
     .addSubcommand((s) =>

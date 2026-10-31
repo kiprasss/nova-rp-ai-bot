@@ -9,14 +9,14 @@ import {
 } from 'discord.js';
 import { PROVIDERS, isProviderId, verifyToken } from '../ai/providers.js';
 import { maskSecret, secrets } from '../crypto.js';
-import { MAX_IDS_PER_USER, addPlayerId, getUserSettings, listPlayerIds, removePlayerId, saveUserSettings } from '../db/repo.js';
+import { addPlayerId, getUserSettings, listPlayerIds, removePlayerId, saveUserSettings } from '../db/repo.js';
 import { idsOverview, normalizeGameId } from '../commands/playerIds.js';
 import { UserError } from '../util/errors.js';
 import { truncate } from '../util/text.js';
 import { COLORS } from './guildLog.js';
 import { buildMainMenu } from './mainMenu.js';
 import { CUSTOM_MODEL, liveModels, modelSelect } from './modelSelect.js';
-import { canManageAnything, computePerms, fetchMember, findDmTokenGuild } from './permissions.js';
+import { canManageAnything, computePerms, fetchMember, findDmTokenGuild, playerIdLimit } from './permissions.js';
 import { button, modal, row, textInput, updateOrReply } from './ui.js';
 
 type DmInteraction = MessageComponentInteraction | ModalSubmitInteraction;
@@ -290,9 +290,10 @@ export async function handleDmInteraction(i: DmInteraction): Promise<void> {
       if (!i.isModalSubmit()) return;
       const id = normalizeGameId(i.fields.getTextInputValue('id'));
       if (!id) throw new UserError('Игровой ID — это только цифры (до 7).');
-      const res = addPlayerId(uid, id);
+      const limit = await playerIdLimit(i.client, uid);
+      const res = addPlayerId(uid, id, limit);
       if (res === 'taken') throw new UserError(`ID **${id}** уже привязан другим пользователем. Если это ваш ID — обратитесь к администрации сервера.`);
-      if (res === 'limit') throw new UserError(`Можно привязать не больше ${MAX_IDS_PER_USER} ID.`);
+      if (res === 'limit') throw new UserError(`Можно привязать не больше ${limit} ID.`);
       await updateOrReply(i, viewIds(uid, res === 'exists' ? `ℹ️ ID ${id} уже привязан.` : `✅ ID **${id}** привязан.`));
       return;
     }

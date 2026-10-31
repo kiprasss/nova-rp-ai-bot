@@ -216,6 +216,7 @@ function migrate(d: DatabaseSync): void {
       ['can_write', 'INTEGER NOT NULL DEFAULT 1'],
       ['see_settings', 'INTEGER NOT NULL DEFAULT 0'],
       ['blocked_commands', "TEXT NOT NULL DEFAULT ''"],
+      ['max_player_ids', 'INTEGER NOT NULL DEFAULT 3'],
     ],
   };
   for (const [table, cols] of Object.entries(add)) {

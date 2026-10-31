@@ -1,6 +1,5 @@
 import { EmbedBuilder, MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import {
-  MAX_IDS_PER_USER,
   addPlayerId,
   getGuild,
   getUserSettings,
@@ -11,7 +10,7 @@ import {
 import { dispatchComplaintAlerts } from '../discord/complaintAlerts.js';
 import { COLORS, audit } from '../discord/guildLog.js';
 import { lastComplaintCheckAt, queueExistingComplaints, watchComplaints } from '../forum/complaintWatch.js';
-import { isGuildAdmin } from '../discord/permissions.js';
+import { isGuildAdmin, playerIdLimit } from '../discord/permissions.js';
 import { UserError } from '../util/errors.js';
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
@@ -87,9 +86,10 @@ export async function cmdPlayerIds(i: ChatInputCommandInteraction): Promise<void
   if (!id) throw new UserError('Игровой ID — это только цифры (до 7), например 54321.');
 
   if (sub === 'добавить') {
-    const res = addPlayerId(uid, id);
+    const limit = await playerIdLimit(i.client, uid);
+    const res = addPlayerId(uid, id, limit);
     if (res === 'taken') throw new UserError(`ID **${id}** уже привязан другим пользователем. Если это ваш ID — обратитесь к администрации сервера.`);
-    if (res === 'limit') throw new UserError(`Можно привязать не больше ${MAX_IDS_PER_USER} ID. Удалите лишний: /мой-id удалить`);
+    if (res === 'limit') throw new UserError(`Можно привязать не больше ${limit} ID. Удалите лишний: /мой-id удалить`);
     let head = res === 'exists' ? `ℹ️ ID **${id}** уже привязан к вам.` : `✅ ID **${id}** привязан.`;
     if (res === 'ok') {
       // Уже существующие жалобы на этот ID — сразу в #ai-жалобы и в ЛС (удобно и для проверки работы).

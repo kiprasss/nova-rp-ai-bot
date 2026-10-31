@@ -1,6 +1,6 @@
 import { PermissionFlagsBits, type Client, type Guild, type GuildMember } from 'discord.js';
 import { config } from '../config.js';
-import { blockedCommandsOf, getGuild, getRolePerms } from '../db/repo.js';
+import { DEFAULT_MAX_IDS_PER_USER, blockedCommandsOf, getGuild, getRolePerms } from '../db/repo.js';
 import { UserError } from '../util/errors.js';
 
 export interface ActorPerms {
@@ -16,6 +16,8 @@ export interface ActorPerms {
   blockedCommands: Set<string>;
   /** 0 — без ограничений */
   hourlyLimit: number;
+  /** Сколько игровых ID можно привязать, 0 — без лимита. */
+  maxPlayerIds: number;
 }
 
 export function isGuildAdmin(member: GuildMember): boolean {
@@ -39,6 +41,7 @@ export function computePerms(member: GuildMember): ActorPerms {
       dmAccess: true,
       blockedCommands: new Set(),
       hourlyLimit: 0,
+      maxPlayerIds: 0,
     };
   }
   const rows = getRolePerms(member.guild.id);
@@ -56,6 +59,7 @@ export function computePerms(member: GuildMember): ActorPerms {
       dmAccess: true,
       blockedCommands: new Set(),
       hourlyLimit: config.defaultUserHourlyLimit,
+      maxPlayerIds: DEFAULT_MAX_IDS_PER_USER,
     };
   }
 
@@ -66,6 +70,7 @@ export function computePerms(member: GuildMember): ActorPerms {
   const limit = mine
     .filter((r) => r.can_ask === 1)
     .reduce((max, r) => (r.hourly_limit === 0 || max === 0 ? 0 : Math.max(max, r.hourly_limit)), -1);
+  const maxIds = mine.reduce((max, r) => (r.max_player_ids === 0 || max === 0 ? 0 : Math.max(max, r.max_player_ids)), -1);
 
   return {
     isAdmin: false,
@@ -77,7 +82,24 @@ export function computePerms(member: GuildMember): ActorPerms {
     dmAccess: mine.some((r) => r.can_ask === 1 && r.dm_access === 1),
     blockedCommands: blocked,
     hourlyLimit: limit < 0 ? config.defaultUserHourlyLimit : limit,
+    maxPlayerIds: maxIds < 0 ? DEFAULT_MAX_IDS_PER_USER : maxIds,
   };
+}
+
+/**
+ * Сколько игровых ID может привязать пользователь (0 — без лимита). ID общие для всех серверов,
+ * поэтому берём самый широкий лимит среди серверов бота, где он состоит; ни на одном — лимит по умолчанию.
+ */
+export async function playerIdLimit(client: Client, userId: string): Promise<number> {
+  let best = -1;
+  for (const guild of client.guilds.cache.values()) {
+    const member = await fetchMember(guild, userId);
+    if (!member) continue;
+    const n = computePerms(member).maxPlayerIds;
+    if (n === 0) return 0;
+    best = Math.max(best, n);
+  }
+  return best < 0 ? DEFAULT_MAX_IDS_PER_USER : best;
 }
 
 /** Получает участника с сервера (fresh = свежие данные из API, для проверки прав в реальном времени). */

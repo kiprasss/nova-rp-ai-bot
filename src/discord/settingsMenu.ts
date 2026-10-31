@@ -120,7 +120,7 @@ function permSummary(p: RolePerm | undefined): string {
     ...ACCESS_FLAGS.filter((f) => p[f]).map((f) => ACCESS_LABELS[f].emoji),
   ];
   const blocked = blockedCommandsOf(p).size;
-  return `${parts.join(' ') || '—'} · ${p.hourly_limit === 0 ? 'без лимита' : `${p.hourly_limit}/ч`}${blocked ? ` · 🚫 ${blocked} ком.` : ''}`;
+  return `${parts.join(' ') || '—'} · ${p.hourly_limit === 0 ? 'без лимита' : `${p.hourly_limit}/ч`} · 🎮 ${p.max_player_ids === 0 ? '∞' : p.max_player_ids} ID${blocked ? ` · 🚫 ${blocked} ком.` : ''}`;
 }
 
 function viewRoles(guild: Guild, note?: string): BaseMessageOptions {
@@ -137,7 +137,7 @@ function viewRoles(guild: Guild, note?: string): BaseMessageOptions {
         '**Настроенные роли:**',
         configured || '_Пока нет — все участники могут спрашивать в #ai-помощник с лимитом по умолчанию._',
         '',
-        'Легенда: 💬 вопросы · 🌐 любой канал · 📚 источники · 🔑 AI-токен · 📜 логи · 👁 видит каналы · ✍️ пишет · ⚙️ видит настройки · 📨 ЛС · 🚫 запрещённые команды',
+        'Легенда: 💬 вопросы · 🌐 любой канал · 📚 источники · 🔑 AI-токен · 📜 логи · 👁 видит каналы · ✍️ пишет · ⚙️ видит настройки · 📨 ЛС · 🎮 игровых ID · 🚫 запрещённые команды',
         'Выберите роль в списке или создайте новую.',
       ]
         .filter((l, i) => i !== 0 || l)
@@ -180,6 +180,7 @@ function viewRole(guild: Guild, roleId: string, note?: string): BaseMessageOptio
     '**AI и настройки**',
     ...PERM_FLAGS.map((f) => `${p[f] ? '✅' : '❌'} ${PERM_LABELS[f].label}`),
     `⏱ Лимит вопросов в час: **${p.hourly_limit === 0 ? 'без лимита' : p.hourly_limit}**`,
+    `🎮 Игровых ID (/мой-id): **${p.max_player_ids === 0 ? 'без лимита' : `до ${p.max_player_ids}`}**`,
     '',
     '**Каналы и ЛС**',
     ...ACCESS_FLAGS.filter((f) => !(isEveryone && f === 'see_settings')).map((f) => `${p[f] ? '✅' : '❌'} ${ACCESS_LABELS[f].label}`),
@@ -246,7 +247,7 @@ function viewRole(guild: Guild, roleId: string, note?: string): BaseMessageOptio
       row(accessSelect),
       row(cmdSelect),
       row(
-        button(`cfg:rolelim:${guild.id}:${roleId}`, 'Лимит в час', ButtonStyle.Primary, '⏱'),
+        button(`cfg:rolelim:${guild.id}:${roleId}`, 'Лимиты', ButtonStyle.Primary, '⏱'),
         button(`cfg:roledel:${guild.id}:${roleId}`, 'Сбросить права', ButtonStyle.Danger, '🗑'),
         button(`cfg:open:${guild.id}:roles`, 'К ролям', ButtonStyle.Secondary, '⬅️'),
       ),
@@ -822,8 +823,9 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
       if (!i.isButton()) return;
       const p = getRolePerm(guildId, arg) ?? defaultPerm(guildId, arg);
       await i.showModal(
-        modal(`cfg:rolelimm:${guildId}:${arg}`, 'Лимит вопросов в час', [
+        modal(`cfg:rolelimm:${guildId}:${arg}`, 'Лимиты роли', [
           textInput('limit', 'Вопросов в час (0 — без лимита)', { value: String(p.hourly_limit), min: 1, max: 4 }),
+          textInput('ids', 'Игровых ID можно привязать (0 — без лимита)', { value: String(p.max_player_ids), min: 1, max: 3 }),
         ]),
       );
       return;
@@ -831,11 +833,19 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
     case 'rolelimm': {
       if (!i.isModalSubmit()) return;
       const n = Number(i.fields.getTextInputValue('limit').trim());
-      if (!Number.isInteger(n) || n < 0 || n > 1000) throw new UserError('Введите целое число от 0 до 1000.');
+      if (!Number.isInteger(n) || n < 0 || n > 1000) throw new UserError('Лимит вопросов: введите целое число от 0 до 1000.');
+      const ids = Number(i.fields.getTextInputValue('ids').trim());
+      if (!Number.isInteger(ids) || ids < 0 || ids > 100) throw new UserError('Игровые ID: введите целое число от 0 до 100.');
       const p = getRolePerm(guildId, arg) ?? defaultPerm(guildId, arg);
-      upsertRolePerm({ ...p, hourly_limit: n });
-      await audit(client, guildId, uid, 'Изменён лимит роли', `${arg === guildId ? '@everyone' : `<@&${arg}>`}: ${n === 0 ? 'без лимита' : `${n}/ч`}`);
-      await updateOrReply(i, viewRole(guild, arg, '✅ Лимит сохранён.'));
+      upsertRolePerm({ ...p, hourly_limit: n, max_player_ids: ids });
+      await audit(
+        client,
+        guildId,
+        uid,
+        'Изменён лимит роли',
+        `${arg === guildId ? '@everyone' : `<@&${arg}>`}: ${n === 0 ? 'без лимита' : `${n}/ч`}, игровых ID: ${ids === 0 ? 'без лимита' : ids}`,
+      );
+      await updateOrReply(i, viewRole(guild, arg, '✅ Лимиты сохранены.'));
       return;
     }
     case 'roledel': {
