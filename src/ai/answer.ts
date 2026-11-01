@@ -147,7 +147,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   const hits = mergeHits(
     [
       searchKnowledge(question, input.guildId, ai.contextSize + 2, 1.5, !ai.searchComplaints),
-      rewritten ? searchKnowledge(rewritten, input.guildId, ai.contextSize + 2, 1.5, !ai.searchComplaints) : [],
+      rewritten ? searchKnowledge(rewritten, input.guildId, ai.contextSize + 2, 1.5, !ai.searchComplaints, question) : [],
     ],
     ai.contextSize,
   );

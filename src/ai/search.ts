@@ -37,6 +37,10 @@ const SLANG: [RegExp, string][] = [
   [/(^|[^\p{L}])(бодик\p{L}*|бодикам\p{L}*|bodycam\p{L}*|бодикамер\p{L}*)(?=[^\p{L}]|$)/giu, ' BodyCam'],
   // «Фама» — семья (family); не «фамилия».
   [/(^|[^\p{L}])(фам|фама|фамы|фаме|фаму|фамой|фамка\p{L}*|фамк\p{L}*)(?=[^\p{L}]|$)/giu, ' семья семьи'],
+  // «Грабить» и «ограбление» стеммер не сводит к одной основе.
+  [/(^|[^\p{L}])(граб\p{L}*|ограб\p{L}*|грабёж\p{L}*|грабеж\p{L}*)(?=[^\p{L}]|$)/giu, ' ограбление ограбления'],
+  // «Как стать лидером» — заявление на пост лидера и требования к нему.
+  [/(стать|стану|становятся|становиться|попасть\s+на|получить)\s+(на\s+)?(лидер\p{L}*|лидерк\p{L}*|пост\s+лидер\p{L}*)/giu, ' заявление на пост лидера требования'],
   // В правилах «использовать оружие», «открывать огонь», а не «стрелять».
   [/(^|[^\p{L}])(стрел\p{L}*|пострел\p{L}*|шмал\p{L}*|пальб\p{L}*)(?=[^\p{L}]|$)/giu, ' оружие огонь'],
   [/(^|[^\p{L}])(чит\p{L}*|софт\p{L}*)(?=[^\p{L}]|$)/giu, ' стороннее постороннего ПО читы'],
@@ -109,6 +113,19 @@ const PREFIX = '~';
 const TITLE_WEIGHT = 0.8;
 
 const GENERAL_RULES = /^Общие правила проекта/i;
+const EVENT_RULES = /^(Правила\s+)?(мероприяти|событи|ГМП)/iu;
+/** Слова заголовка ивента, которые его не выделяют («правила мероприятия Ограбление…» — общее, «банкомата» — нет). */
+const EVENT_GENERIC = new Set(tokenizeTitleGeneric('правила правил мероприятие мероприятия мероприятий событие события ограбление ограбления ограблений и'));
+
+function tokenizeTitleGeneric(text: string): string[] {
+  return tokenize(text);
+}
+
+/** Вопрос называет этот ивент — есть отличительное слово его заголовка. */
+function eventNamed(titleTerms: Set<string>, query: Set<string>): boolean {
+  for (const t of titleTerms) if (!EVENT_GENERIC.has(t) && query.has(t)) return true;
+  return false;
+}
 
 const COMPLAINT_RULES = /правил|форм[аыу] подачи|регламент/i;
 
@@ -160,7 +177,8 @@ export class Bm25Index {
     return this.docs.length;
   }
 
-  search(query: string, limit: number, filter?: (c: ChunkRow) => boolean): SearchHit[] {
+  /** eventText — текст, по которому решаем, назван ли ивент (вопрос игрока, а не переписанный AI запрос с догадками). */
+  search(query: string, limit: number, filter?: (c: ChunkRow) => boolean, eventText?: string): SearchHit[] {
     const terms = [...new Set(tokenize(query))];
     if (!terms.length) return [];
     const n = this.docs.length;
@@ -169,6 +187,7 @@ export class Bm25Index {
       return Math.log(1 + (n - df + 0.5) / (df + 0.5));
     };
     const idfTotal = terms.reduce((sum, t) => sum + idfOf(t), 0) || 1;
+    const termSet = new Set(eventText !== undefined ? tokenize(expandSlang(eventText)) : terms);
     const hits: SearchHit[] = [];
     for (const d of this.docs) {
       if (filter && !filter(d.chunk)) continue;
@@ -189,12 +208,17 @@ export class Bm25Index {
       score *= 1 + matched / terms.length;
       // Заголовок темы говорит, о чём она: «жалоба на игрока» → «Правила подачи жалоб на игроков», а не «…на администрацию».
       // Доля считается по IDF слов запроса: частое «правила» есть почти в каждом заголовке и почти ничего не даёт.
-      score *= 1 + TITLE_WEIGHT * (titleIdf / idfTotal);
+      const unnamedEvent = EVENT_RULES.test(d.chunk.title) && !eventNamed(d.titleTerms, termSet);
+      // Совпадение с заголовком ивента по общему слову («ограбление» в «Ограбление банкомата») ни о чём не говорит.
+      if (!unnamedEvent) score *= 1 + TITLE_WEIGHT * (titleIdf / idfTotal);
       // Жалобы — разбор конкретных случаев: слова совпадают часто, а отвечают на общий вопрос редко.
       // Регламент раздела жалоб («Правила подачи жалоб», «Форма подачи») — это правила, их не штрафуем.
       if (isRulesChunk(d.chunk)) score *= 1.25;
       // Общие правила проекта — главный ответ на общий вопрос («что будет за читы»), а не правила отдельного ивента.
       if (GENERAL_RULES.test(d.chunk.title)) score *= 1.3;
+      // Правила отдельного мероприятия/события, а вопрос его не называет («грабить без отыгровки», а не «ограбление банкомата») —
+      // общий ответ скорее в тематических правилах, ивент чуть ниже.
+      if (unnamedEvent) score *= 0.8;
       else if (d.chunk.is_complaint) score *= 0.6;
       hits.push({ chunk: d.chunk, score });
     }
@@ -220,7 +244,14 @@ function getIndex(): Bm25Index {
  * Поиск по базе знаний. scope — ID сервера (ищем только по его источникам; если источников нет —
  * по глобальной базе) или null для ЛС (ищем по всей базе).
  */
-export function searchKnowledge(query: string, scope: string | null, limit = 6, minScore = 1.5, excludeComplaints = false): SearchHit[] {
+export function searchKnowledge(
+  query: string,
+  scope: string | null,
+  limit = 6,
+  minScore = 1.5,
+  excludeComplaints = false,
+  eventText?: string,
+): SearchHit[] {
   let allowed: Set<string> | null = null;
   if (scope) {
     allowed = docUrlsForScope(scope);
@@ -231,6 +262,7 @@ export function searchKnowledge(query: string, scope: string | null, limit = 6, 
     expandSlang(query),
     limit * 3,
     (c) => (!allowed || allowed.has(c.doc_url)) && !(excludeComplaints && c.is_complaint === 1),
+    eventText,
   );
   return capPerDoc(hits, limit, minScore);
 }
