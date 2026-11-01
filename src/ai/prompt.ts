@@ -126,6 +126,24 @@ const EXAMPLE_A =
   'Наказание — то, что указано в этом пункте [1].';
 
 /** OpenAI, xAI и прочие универсальные модели: нумерованные правила. */
+
+/**
+ * «Уточнение:» под пунктом наказывается тем же наказанием, что и пункт, — подписываем его прямо в тексте фрагмента,
+ * иначе модель часто отвечает «наказание не указано» (пример: Общие правила 7.7, госбронежилеты).
+ */
+export function annotateClarifications(text: string): string {
+  return text.replace(/Уточнение:/g, (m, offset: number) => {
+    const before = text.slice(0, offset);
+    const pun = [...before.matchAll(/Наказание:\s*([^\n]+)/g)].pop();
+    if (!pun || pun.index === undefined) return m;
+    // Между наказанием и уточнением начался другой пункт — не наш.
+    const between = before.slice(pun.index + pun[0].length);
+    if (/(^|\n)\s*(Пункт\s*)?\d+\.\d+/.test(between)) return m;
+    const p = pun[1].trim().replace(/[.;\s]+$/, '').slice(0, 100);
+    return p ? `Уточнение (нарушение наказывается так же: ${p}):` : m;
+  });
+}
+
 function standard(length: AnswerLength, question: string, fragments: ContextFragment[], forumOnly: boolean): BuiltPrompt {
   const system = [
     role(forumOnly),
@@ -135,7 +153,7 @@ function standard(length: AnswerLength, question: string, fragments: ContextFrag
     `Пример формата (номер пункта и наказание всегда бери из контекста): «${EXAMPLE_Q}» → «${EXAMPLE_A}»`,
   ].join('\n');
   const ctx = fragments.length
-    ? fragments.map((f) => `[${f.n}] ${label(f)}\n${f.text}`).join('\n\n---\n\n')
+    ? fragments.map((f) => `[${f.n}] ${label(f)}\n${annotateClarifications(f.text)}`).join('\n\n---\n\n')
     : NO_CONTEXT;
   return { system, user: `КОНТЕКСТ:\n${ctx}\n\nСООБЩЕНИЕ ИГРОКА:\n${question}`, temperature: 0.4 };
 }
@@ -161,7 +179,7 @@ function claude(length: AnswerLength, question: string, fragments: ContextFragme
     '</example>',
   ].join('\n');
   const ctx = fragments.length
-    ? fragments.map((f) => `<fragment n="${f.n}" title="${label(f).replace(/["<>]/g, "'")}">\n${f.text}\n</fragment>`).join('\n')
+    ? fragments.map((f) => `<fragment n="${f.n}" title="${label(f).replace(/["<>]/g, "'")}">\n${annotateClarifications(f.text)}\n</fragment>`).join('\n')
     : NO_CONTEXT;
   // Haiku без напоминания в конце пишет длиннее заданного, а решения по правилам («вопрос про ивент, значит…»)
   // проговаривает прямо в ответе. Поэтому — черновик в <analysis>: бот его вырезает (stripReasoning), игрок видит только <answer>.
@@ -247,7 +265,7 @@ function compact(length: AnswerLength, question: string, fragments: ContextFragm
       ? 'Ответ: Я AI-бот NOVA RP и отвечаю только на вопросы по правилам и форуму проекта.'
       : 'Ответ: Привет! Я AI-помощник NOVA RP — подскажу по правилам, наказаниям, жалобам и всему, что есть на форуме. Спрашивай 🙂',
   ].join('\n');
-  const ctx = fragments.length ? fragments.map((f) => `[${f.n}] ${label(f)}\n${f.text}`).join('\n\n') : NO_CONTEXT;
+  const ctx = fragments.length ? fragments.map((f) => `[${f.n}] ${label(f)}\n${annotateClarifications(f.text)}`).join('\n\n') : NO_CONTEXT;
   const user =
     `КОНТЕКСТ:\n${ctx}\n\nСООБЩЕНИЕ: ${question}\n\n` +
     (forumOnly
