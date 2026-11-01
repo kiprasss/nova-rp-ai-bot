@@ -8,7 +8,8 @@ module.exports = {
       autorestart: true,
       max_restarts: 50,
       restart_delay: 5000,
-      max_memory_restart: '300M',
+      // Обновление базы знаний (скачивание сотен тем) поднимает память выше 300 МБ — pm2 перезапускал бота посреди обновления.
+      max_memory_restart: '600M',
       time: true,
     },
   ],
