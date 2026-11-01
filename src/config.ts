@@ -78,6 +78,9 @@ export const config = {
   dmHourlyLimit: int('DM_HOURLY_LIMIT', 20),
   cooldownSeconds: int('COOLDOWN_SECONDS', 5),
 
+  /** Сервер, чей AI-токен берут все остальные серверы без своего токена (ЛС не затрагивает). */
+  sharedAiGuildId: str('SHARED_AI_GUILD_ID') || null,
+
   fallbackAi: {
     provider: (str('DEFAULT_AI_PROVIDER') || null) as ProviderId | null,
     token: str('DEFAULT_AI_TOKEN') || null,

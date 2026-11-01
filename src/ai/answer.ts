@@ -30,7 +30,7 @@ function decryptOrNull(enc: string | null): string | null {
   }
 }
 
-/** Токен сервера (на сервере) или личный токен (в ЛС); иначе — токен по умолчанию из .env. */
+/** Токен сервера (на сервере; без него — токен SHARED_AI_GUILD_ID) или личный токен (в ЛС); иначе — токен по умолчанию из .env. */
 export function resolveCredentials(guildId: string | null, userId: string): Credentials | null {
   const make = (provider: ProviderId, token: string, model: string | null, origin: Credentials['origin']): Credentials => ({
     provider,
@@ -43,6 +43,13 @@ export function resolveCredentials(guildId: string | null, userId: string): Cred
     const g = getGuild(guildId);
     const token = decryptOrNull(g?.ai_token ?? null);
     if (g && token && isProviderId(g.ai_provider)) return make(g.ai_provider, token, g.ai_model, 'guild');
+    // Сервер без своего токена — берём токен общего сервера (SHARED_AI_GUILD_ID).
+    const sharedId = config.sharedAiGuildId;
+    if (sharedId && sharedId !== guildId) {
+      const sg = getGuild(sharedId);
+      const st = decryptOrNull(sg?.ai_token ?? null);
+      if (sg && st && isProviderId(sg.ai_provider)) return make(sg.ai_provider, st, sg.ai_model, 'guild');
+    }
   } else {
     const s = getUserSettings(userId);
     const token = decryptOrNull(s.ai_token);
