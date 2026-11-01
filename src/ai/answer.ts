@@ -30,7 +30,17 @@ function decryptOrNull(enc: string | null): string | null {
   }
 }
 
-/** Токен сервера (на сервере; без него — токен SHARED_AI_GUILD_ID) или личный токен (в ЛС); иначе — токен по умолчанию из .env. */
+/** AI-токен общего сервера (SHARED_AI_GUILD_ID), если он задан. */
+export function sharedAiGuildCredentials(): { guildId: string; provider: ProviderId; token: string; model: string | null } | null {
+  const sharedId = config.sharedAiGuildId;
+  if (!sharedId) return null;
+  const sg = getGuild(sharedId);
+  const token = decryptOrNull(sg?.ai_token ?? null);
+  if (!sg || !token || !isProviderId(sg.ai_provider)) return null;
+  return { guildId: sharedId, provider: sg.ai_provider, token, model: sg.ai_model };
+}
+
+/** Токен сервера (на сервере) или личный токен (в ЛС); без них — токен SHARED_AI_GUILD_ID; иначе — токен по умолчанию из .env. */
 export function resolveCredentials(guildId: string | null, userId: string): Credentials | null {
   const make = (provider: ProviderId, token: string, model: string | null, origin: Credentials['origin']): Credentials => ({
     provider,
@@ -43,18 +53,14 @@ export function resolveCredentials(guildId: string | null, userId: string): Cred
     const g = getGuild(guildId);
     const token = decryptOrNull(g?.ai_token ?? null);
     if (g && token && isProviderId(g.ai_provider)) return make(g.ai_provider, token, g.ai_model, 'guild');
-    // Сервер без своего токена — берём токен общего сервера (SHARED_AI_GUILD_ID).
-    const sharedId = config.sharedAiGuildId;
-    if (sharedId && sharedId !== guildId) {
-      const sg = getGuild(sharedId);
-      const st = decryptOrNull(sg?.ai_token ?? null);
-      if (sg && st && isProviderId(sg.ai_provider)) return make(sg.ai_provider, st, sg.ai_model, 'guild');
-    }
   } else {
     const s = getUserSettings(userId);
     const token = decryptOrNull(s.ai_token);
     if (token && isProviderId(s.ai_provider)) return make(s.ai_provider, token, s.ai_model, 'user');
   }
+  // Нет своего токена (сервер или ЛС) — берём токен общего сервера (SHARED_AI_GUILD_ID).
+  const shared = sharedAiGuildCredentials();
+  if (shared && shared.guildId !== guildId) return make(shared.provider, shared.token, shared.model, 'guild');
   const fb = config.fallbackAi;
   if (fb.token && isProviderId(fb.provider)) return make(fb.provider, fb.token, fb.model, 'default');
   return null;

@@ -8,6 +8,7 @@ import {
   type ModalSubmitInteraction,
 } from 'discord.js';
 import { PROVIDERS, isProviderId, verifyToken } from '../ai/providers.js';
+import { sharedAiGuildCredentials } from '../ai/answer.js';
 import { maskSecret, secrets } from '../crypto.js';
 import { addPlayerId, getUserSettings, listPlayerIds, removePlayerId, saveUserSettings } from '../db/repo.js';
 import { idsOverview, normalizeGameId } from '../commands/playerIds.js';
@@ -88,7 +89,9 @@ async function viewToken(client: Client, userId: string, note?: string): Promise
     const donor = await findDmTokenGuild(client, userId);
     inUse = donor
       ? `🖥 токен сервера **${donor.guild.name}** (личный токен не нужен — можно сразу писать вопросы)`
-      : '❌ нет — задайте личный токен или попросите администрацию сервера разрешить вашей роли «Бот в ЛС с токеном сервера»';
+      : sharedAiGuildCredentials()
+        ? '🖥 общий токен бота (личный токен не нужен — можно сразу писать вопросы)'
+        : '❌ нет — задайте личный токен или попросите администрацию сервера разрешить вашей роли «Бот в ЛС с токеном сервера»';
   }
   const provider = isProviderId(s.ai_provider) ? PROVIDERS[s.ai_provider] : null;
   let masked = 'не задан';
