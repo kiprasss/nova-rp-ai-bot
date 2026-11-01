@@ -34,7 +34,9 @@ const SLANG: [RegExp, string][] = [
   [/(^|[^\p{L}])(нрп|нонрп|nonrp)(?=[^\p{L}]|$)/giu, ' NonRP'],
   [/(^|[^\p{L}])(оос|ooc)(?=[^\p{L}]|$)/giu, ' OOC'],
   [/(^|[^\p{L}])(зз|зелёнк\p{L}*|зеленк\p{L}*)(?=[^\p{L}]|$)/giu, ' зелёная зона'],
-  [/(^|[^\p{L}])(чит\p{L}*|софт\p{L}*)(?=[^\p{L}]|$)/giu, ' стороннее ПО читы'],
+  // В правилах «использовать оружие», «открывать огонь», а не «стрелять».
+  [/(^|[^\p{L}])(стрел\p{L}*|пострел\p{L}*|шмал\p{L}*|пальб\p{L}*)(?=[^\p{L}]|$)/giu, ' оружие огонь'],
+  [/(^|[^\p{L}])(чит\p{L}*|софт\p{L}*)(?=[^\p{L}]|$)/giu, ' стороннее постороннего ПО читы'],
   [/(^|[^\p{L}])(варн\p{L}*|warn)(?=[^\p{L}]|$)/giu, ' WARN предупреждение'],
   [/(^|[^\p{L}])(деморган\p{L}*|джайл\p{L}*|jail)(?=[^\p{L}]|$)/giu, ' JAIL'],
   // Не «банк», «банкомат», «банда»: только сам бан и глаголы от него.
@@ -67,9 +69,11 @@ const ENDINGS = [
   'ы', 'и', 'у', 'ю', 'ь', 'й',
 ].sort((a, b) => b.length - a.length);
 
-/** Очень лёгкий стеммер для русского: срезает типичные окончания у слов длиннее 4 букв. */
+/** Очень лёгкий стеммер для русского: срезает типичные окончания (у слов из 4 букв — только одну гласную). */
 export function stem(word: string): string {
-  if (!/[а-я]/.test(word) || word.length <= 4) return word;
+  if (!/[а-я]/.test(word) || word.length <= 3) return word;
+  // Короткие слова — только однобуквенное окончание: «зона/зоне/зону» → «зон».
+  if (word.length === 4) return /[аяоеыиуюьй]$/.test(word) ? word.slice(0, -1) : word;
   for (const end of ENDINGS) {
     if (word.endsWith(end) && word.length - end.length >= 3) return word.slice(0, -end.length);
   }
@@ -100,6 +104,8 @@ const PREFIX = '~';
 
 /** Насколько поднимать фрагмент, если слова запроса есть в заголовке его темы (до ×1.8 при полном совпадении). */
 const TITLE_WEIGHT = 0.8;
+
+const GENERAL_RULES = /^Общие правила проекта/i;
 
 const COMPLAINT_RULES = /правил|форм[аыу] подачи|регламент/i;
 
@@ -184,6 +190,8 @@ export class Bm25Index {
       // Жалобы — разбор конкретных случаев: слова совпадают часто, а отвечают на общий вопрос редко.
       // Регламент раздела жалоб («Правила подачи жалоб», «Форма подачи») — это правила, их не штрафуем.
       if (isRulesChunk(d.chunk)) score *= 1.25;
+      // Общие правила проекта — главный ответ на общий вопрос («что будет за читы»), а не правила отдельного ивента.
+      if (GENERAL_RULES.test(d.chunk.title)) score *= 1.3;
       else if (d.chunk.is_complaint) score *= 0.6;
       hits.push({ chunk: d.chunk, score });
     }
@@ -249,7 +257,7 @@ export function mergeHits(lists: SearchHit[][], limit = 6): SearchHit[] {
       seenText.add(key);
       return true;
     });
-  // Слабые совпадения уже отсеяны в каждом поиске (searchKnowledge), здесь только лимит и не больше 3 фрагментов из темы.
+  // Слабые совпадения уже отсеяны в каждом поиске (searchKnowledge), здесь только лимит и не больше 3–4 фрагментов из темы.
   return capPerDoc(unique, limit, 0, false);
 }
 
@@ -261,14 +269,32 @@ export function normalizedText(text: string): string {
 /** Фрагменты слабее этой доли лучшего результата — случайные совпадения по одному слову. */
 const RELATIVE_CUTOFF = 0.55;
 
+/** Номер первого пункта фрагмента («1.2.1 Запрещено…», «Пункт 1.2: …»), пропуская заголовок раздела и дату редакции. */
+function leadingPoint(text: string): string | null {
+  for (const line of text.split('\n').slice(0, 4)) {
+    const m = line.trim().match(/^(?:Пункт\s+)?(\d{1,2}(?:\.\d{1,2}){1,2})\b/u);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 function capPerDoc(hits: SearchHit[], limit: number, minScore: number, relative = true): SearchHit[] {
   const out: SearchHit[] = [];
   const perDoc = new Map<string, number>();
   const cutoff = Math.max(minScore, relative ? (hits[0]?.score ?? 0) * RELATIVE_CUTOFF : 0);
+  const seenPoints = new Set<string>();
   for (const h of hits) {
     if (h.score < cutoff) continue;
+    // Тот же пункт той же темы второй раз (старая и новая редакция, фрагмент и «Пункт N» из таблицы) — не берём.
+    const point = leadingPoint(h.chunk.text);
+    if (point) {
+      const key = `${h.chunk.doc_url}#${point}`;
+      if (seenPoints.has(key)) continue;
+      seenPoints.add(key);
+    }
     const n = perDoc.get(h.chunk.doc_url) ?? 0;
-    if (n >= 3) continue; // не более 3 фрагментов из одной темы
+    // Не более 3 фрагментов из одной темы; из правил — 4: там фрагмент ≈ один пункт, и нужный легко вытесняют соседние.
+    if (n >= (isRulesChunk(h.chunk) ? 4 : 3)) continue;
     perDoc.set(h.chunk.doc_url, n + 1);
     out.push(h);
     if (out.length >= limit) break;

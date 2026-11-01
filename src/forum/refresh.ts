@@ -19,7 +19,7 @@ import {
   type StoredRule,
 } from '../db/repo.js';
 import { log } from '../util/logger.js';
-import { chunkText } from './chunker.js';
+import { chunkRulesText, chunkText } from './chunker.js';
 import { ForumBlockedError, PoliteFetcher } from './http.js';
 import { parseForum, parseThread, type ParsedPost, type ThreadListItem } from './parser.js';
 import { diffRules } from './ruleDiff.js';
@@ -163,7 +163,7 @@ async function indexThread(
   posts.forEach((post, i) => {
     const body = complaint ? sanitizeText(post.text) : post.text;
     const text = i === 0 && header.length ? `${header.join('\n')}\n\n${body}` : body;
-    for (const c of chunkText(text)) chunks.push({ postUrl: post.url, text: c });
+    for (const c of isRules ? chunkRulesText(text) : chunkText(text)) chunks.push({ postUrl: post.url, text: c });
     for (const r of extractRules(post.text)) {
       if (seenPoints.has(r.point)) continue;
       seenPoints.add(r.point);

@@ -1,6 +1,6 @@
 import type { Client } from 'discord.js';
 import { DEFAULT_SOURCES, config } from './config.js';
-import { GLOBAL_SCOPE, addSource, countPlayerIds, getMeta, listGuilds, listSources } from './db/repo.js';
+import { GLOBAL_SCOPE, addSource, countPlayerIds, expireRuleDocuments, getMeta, listGuilds, listSources, setMeta, updateGuild } from './db/repo.js';
 import { dispatchComplaintAlerts } from './discord/complaintAlerts.js';
 import { dispatchRuleUpdates } from './discord/ruleUpdates.js';
 import { watchComplaints } from './forum/complaintWatch.js';
@@ -51,7 +51,20 @@ async function complaintTick(client: Client): Promise<void> {
   }
 }
 
+/** Меняется, когда меняется разбивка тем на фрагменты: темы с правилами переиндексируются при старте. */
+const INDEX_VERSION = '2';
+
+function reindexIfNeeded(): void {
+  if (getMeta('index_version') === INDEX_VERSION) return;
+  const n = expireRuleDocuments();
+  setMeta('global_last_refresh', '0');
+  for (const g of listGuilds()) updateGuild(g.guild_id, { last_refresh_at: null });
+  setMeta('index_version', INDEX_VERSION);
+  log.info(`Новая разбивка на фрагменты (v${INDEX_VERSION}): тем с правилами к переиндексации — ${n}`);
+}
+
 export function startScheduler(client: Client): NodeJS.Timeout {
+  reindexIfNeeded();
   setTimeout(() => tick(client), 15_000);
   setTimeout(() => void complaintTick(client), 30_000);
   setInterval(() => void complaintTick(client), config.complaintCheckMinutes * 60_000);

@@ -171,6 +171,11 @@ export function getMeta(key: string): string | null {
   return get<{ value: string | null }>('SELECT value FROM meta WHERE key = ?', key)?.value ?? null;
 }
 
+/** Темы с правилами считаются устаревшими — при следующем обновлении скачиваются и режутся на фрагменты заново. */
+export function expireRuleDocuments(): number {
+  return run('UPDATE documents SET fetched_at = 0 WHERE is_rules = 1').changes;
+}
+
 export function setMeta(key: string, value: string): void {
   run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, value);
 }
