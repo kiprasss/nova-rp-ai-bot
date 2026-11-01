@@ -1,4 +1,5 @@
 import { ActivityType, Client, DiscordjsErrorCodes, Events, GatewayIntentBits, Partials } from 'discord.js';
+import { attachSharedToken } from './db/repo.js';
 import { syncCommands } from './commands/sync.js';
 import { assertRuntimeConfig, config } from './config.js';
 import { initSecretKey } from './crypto.js';
@@ -47,6 +48,8 @@ function createClient(): Client {
   c.once(Events.ClientReady, (ready) => {
     log.info(`Бот запущен как ${ready.user.tag}. Серверов: ${ready.guilds.cache.size}`);
     ready.user.setActivity('вопросы о NOVA RP | /помощь', { type: ActivityType.Listening });
+    const attached = attachSharedToken();
+    if (attached) log.info(`Общий AI-токен привязан к серверам: ${attached}`);
     startScheduler(ready);
     void syncCommands(ready);
   });

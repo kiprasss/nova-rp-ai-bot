@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import { all, get, run, transaction, type Param } from './database.js';
 
 export const GLOBAL_SCOPE = 'global';
@@ -191,7 +192,35 @@ export function ensureGuildRow(guildId: string, refreshHours: number): GuildRow 
     refreshHours,
     Date.now(),
   );
+  attachSharedToken(guildId);
   return getGuild(guildId)!;
+}
+
+/**
+ * Общий AI-токен (SHARED_AI_GUILD_ID): серверам без своего токена копируется токен основного сервера
+ * (зашифрованная строка как есть — привязанные серверы узнаются по совпадению ai_token).
+ * guildId = null — привязать все серверы без токена.
+ */
+export function attachSharedToken(guildId: string | null = null): number {
+  const sharedId = config.sharedAiGuildId;
+  if (!sharedId || guildId === sharedId) return 0;
+  return copySharedAi(sharedId, null, guildId);
+}
+
+function copySharedAi(sharedId: string, oldToken: string | null, onlyGuildId: string | null): number {
+  const src = getGuild(sharedId);
+  if (oldToken === null && !src?.ai_token) return 0;
+  const res = run(
+    `UPDATE guilds SET ai_provider = ?, ai_token = ?, ai_model = ?
+     WHERE guild_id != ? AND ai_token IS ?${onlyGuildId ? ' AND guild_id = ?' : ''}`,
+    src?.ai_provider ?? null,
+    src?.ai_token ?? null,
+    src?.ai_model ?? null,
+    sharedId,
+    oldToken,
+    ...(onlyGuildId ? [onlyGuildId] : []),
+  );
+  return Number(res.changes ?? 0);
 }
 
 type GuildField = Exclude<keyof GuildRow, 'guild_id' | 'created_at'>;
@@ -200,8 +229,14 @@ export function updateGuild(guildId: string, patch: Partial<Record<GuildField, P
   const keys = Object.keys(patch) as GuildField[];
   if (!keys.length) return;
   const sets = keys.map((k) => `${k} = ?`).join(', ');
+  // Меняется AI основного сервера — привязанные к его токену серверы получают то же самое.
+  const sharedId = config.sharedAiGuildId;
+  const syncShared = guildId === sharedId && keys.some((k) => k === 'ai_provider' || k === 'ai_token' || k === 'ai_model');
+  const oldToken = syncShared ? (getGuild(guildId)?.ai_token ?? null) : null;
   // Имена колонок берутся только из типа GuildField, пользовательский ввод сюда не попадает.
   run(`UPDATE guilds SET ${sets} WHERE guild_id = ?`, ...keys.map((k) => patch[k] ?? null), guildId);
+  if (syncShared && oldToken) copySharedAi(guildId, oldToken, null);
+  if (syncShared) attachSharedToken(null);
 }
 
 // ---------- роли ----------
