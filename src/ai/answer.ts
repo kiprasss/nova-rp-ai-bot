@@ -8,7 +8,7 @@ import { buildPrompt, citedNumbers, cleanCitations, type ContextFragment } from 
 import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
 import { lookupRule } from './ruleLookup.js';
 import { termDefinitions } from './glossary.js';
-import { rewriteQuery } from './queryRewrite.js';
+import { expandSlang, rewriteQuery } from './queryRewrite.js';
 import { isRulesChunk, mergeHits, normalizedText, searchKnowledge, type SearchHit } from './search.js';
 
 export interface Credentials {
@@ -98,7 +98,9 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   const creds = resolved ? await ensureAvailableModel(resolved) : null;
 
   // «Бот ищет сам»: AI переписывает вопрос (опечатки, сленг, синонимы), ищем по обоим вариантам.
-  const rewritten = creds && ai.rewrite ? await rewriteQuery(creds, question, ai.fallbackModel) : null;
+  const aiRewrite = creds && ai.rewrite ? await rewriteQuery(creds, question, ai.fallbackModel) : null;
+  const slang = expandSlang(question);
+  const rewritten = [aiRewrite, slang].filter(Boolean).join(' ') || null;
   const searchText = rewritten ? `${question}\n${rewritten}` : question;
 
   const fragments: ContextFragment[] = [];
