@@ -141,7 +141,7 @@ export async function analyzeGuild(client: Client, guild: Guild): Promise<Wizard
   if (sources.some((s) => s.last_error?.includes('защитой'))) {
     plan.checks.push({ ok: false, text: 'Форум закрыт защитой от ботов — обновление базы и проверка жалоб временно не работают' });
     plan.manual.push(
-      'Попросите администрацию форума forum.grand-rp.su добавить бота в белый список (User-Agent из .env, IP сервера бота). До этого бот отвечает по уже собранной базе.',
+      'Попросите администрацию форума forum.nova-rp.com добавить бота в белый список (User-Agent из .env, IP сервера бота). До этого бот отвечает по уже собранной базе.',
     );
   }
 

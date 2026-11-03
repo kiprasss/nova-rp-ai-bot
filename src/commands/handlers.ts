@@ -347,7 +347,7 @@ async function cmdHelp(i: ChatInputCommandInteraction) {
         '`/setup` — создать категорию «NOVA RP AI», каналы и меню настроек',
         `Меню в #${CHANNEL_NAMES.settings}: роли, AI-токен, источники, каналы, FAQ, статус`,
         '',
-        '_AI отвечает только по данным форума forum.grand-rp.su и только на вопросы о NOVA RP._',
+        '_AI отвечает только по данным форума forum.nova-rp.com и только на вопросы о NOVA RP._',
       ].join('\n'),
     );
   await i.reply({ embeds: [embed], flags: ephemeralIfGuild(i) });

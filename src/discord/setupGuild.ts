@@ -45,7 +45,7 @@ export const PURPOSE_LABELS: Record<Purpose, string> = {
 };
 
 const TOPICS: Record<Purpose, string> = {
-  assistant: 'Задайте вопрос о NOVA RP — AI ответит по данным форума forum.grand-rp.su. Команды: /помощь',
+  assistant: 'Задайте вопрос о NOVA RP — AI ответит по данным форума forum.nova-rp.com. Команды: /помощь',
   rules: 'Автоматические уведомления об изменениях правил NOVA RP с форума (только правила, без жалоб)',
   complaints: 'Бот сообщает, если на форуме подали жалобу на ваш игровой ID. Привязать ID: /мой-id добавить',
   settings: 'Панель управления ботом NOVA RP AI (видна только администраторам)',

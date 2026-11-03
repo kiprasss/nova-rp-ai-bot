@@ -47,7 +47,7 @@ export const config = {
   encryptionKey: str('ENCRYPTION_KEY'),
   databasePath: str('DATABASE_PATH', './data/bot.db'),
 
-  forumBaseUrl: str('FORUM_BASE_URL', 'https://forum.grand-rp.su').replace(/\/+$/, ''),
+  forumBaseUrl: str('FORUM_BASE_URL', 'https://forum.nova-rp.com').replace(/\/+$/, ''),
   userAgent: str('SCRAPER_USER_AGENT', 'NovaRP-AI-Bot/1.0 (Discord bot; polite scraper)'),
   scrapeDelayMs: int('SCRAPE_DELAY_MS', 2500),
   scrapeMaxThreadsPerSource: int('SCRAPE_MAX_THREADS_PER_SOURCE', 60),
@@ -64,7 +64,7 @@ export const config = {
   // Сервер Mirage: новые жалобы (899) и проверенные — со статусом (945).
   complaintWatchUrls: str(
     'COMPLAINT_WATCH_URLS',
-    ['899', '945'].map((id) => `${str('FORUM_BASE_URL', 'https://forum.grand-rp.su').replace(/\/+$/, '')}/forums/${id}/`).join(','),
+    ['899', '945'].map((id) => `${str('FORUM_BASE_URL', 'https://forum.nova-rp.com').replace(/\/+$/, '')}/forums/${id}/`).join(','),
   )
     .split(',')
     .map((u) => u.trim())

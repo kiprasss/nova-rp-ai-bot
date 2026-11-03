@@ -225,6 +225,51 @@ function migrate(d: DatabaseSync): void {
       if (!existing.has(name)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
     }
   }
+  migrateForumHost(d);
+}
+
+/** Форум переехал с forum.grand-rp.su на forum.nova-rp.com (номера тем и разделов те же). */
+export const LEGACY_FORUM_HOST = 'forum.grand-rp.su';
+export const FORUM_HOST = 'forum.nova-rp.com';
+
+/**
+ * Переписывает ссылки старого форума во всех текстовых колонках и удаляет заглушки «Форум переехал»,
+ * скачанные со старого адреса (в них нет текста — после переезда темы скачаются заново).
+ */
+function migrateForumHost(d: DatabaseSync): void {
+  const tables = (d.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as {
+    name: string;
+  }[]).map((t) => t.name);
+  const targets: [string, string][] = [];
+  for (const t of tables) {
+    for (const c of d.prepare(`PRAGMA table_info(${t})`).all() as { name: string; type: string }[]) {
+      if (!/TEXT/i.test(c.type)) continue;
+      const hit = d.prepare(`SELECT 1 FROM ${t} WHERE ${c.name} LIKE ? LIMIT 1`).get(`%${LEGACY_FORUM_HOST}%`);
+      if (hit) targets.push([t, c.name]);
+    }
+  }
+  if (!targets.length) return;
+  // Ссылки — ключи и внешние ключи (documents.url ← chunks.doc_url …): меняем всё разом с выключенными FK.
+  d.exec('PRAGMA foreign_keys = OFF');
+  try {
+    d.exec('BEGIN');
+    d.prepare("DELETE FROM chunks WHERE doc_url IN (SELECT url FROM documents WHERE title = 'Форум переехал — NOVA RP')").run();
+    d.prepare("DELETE FROM source_docs WHERE doc_url IN (SELECT url FROM documents WHERE title = 'Форум переехал — NOVA RP')").run();
+    d.prepare("DELETE FROM documents WHERE title = 'Форум переехал — NOVA RP'").run();
+    for (const [t, c] of targets) {
+      d.prepare(`UPDATE ${t} SET ${c} = replace(${c}, ?, ?) WHERE ${c} LIKE ?`).run(
+        LEGACY_FORUM_HOST,
+        FORUM_HOST,
+        `%${LEGACY_FORUM_HOST}%`,
+      );
+    }
+    d.exec('COMMIT');
+  } catch (err) {
+    d.exec('ROLLBACK');
+    throw err;
+  } finally {
+    d.exec('PRAGMA foreign_keys = ON');
+  }
 }
 
 export function getDb(): DatabaseSync {

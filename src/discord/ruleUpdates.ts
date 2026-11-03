@@ -76,7 +76,7 @@ export function buildRuleUpdateEmbeds(events: RuleEventRow[]): EmbedBuilder[] {
         .setTitle(truncate(`📜 Обновление правил: ${list[0].doc_title}`, 256))
         .setURL(url)
         .setDescription(lines.join('\n\n'))
-        .setFooter({ text: `${summary ? `${summary} · ` : ''}forum.grand-rp.su` })
+        .setFooter({ text: `${summary ? `${summary} · ` : ''}forum.nova-rp.com` })
         .setTimestamp(list[list.length - 1].ts),
     );
   }
