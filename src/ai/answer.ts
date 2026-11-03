@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { secrets } from '../crypto.js';
-import { getGuild, getUserSettings, listFaq, recordAiRequest, rulesForDoc } from '../db/repo.js';
+import { chunkForRulePoint, chunkTextsForDoc, getGuild, getUserSettings, listFaq, recordAiRequest, rulesForDoc } from '../db/repo.js';
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
@@ -162,7 +162,17 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     if (whole && h.chunk.doc_url === whole.docUrl) continue;
     if (seenText.has(normalizedText(h.chunk.text))) continue;
     const kind = isRulesChunk(h.chunk) ? 'rule' : h.chunk.is_complaint ? 'complaint' : 'forum';
-    fragments.push({ n: fragments.length + 1, title: h.chunk.title, url: h.chunk.post_url, text: h.chunk.text, kind });
+    let { text, post_url: url } = h.chunk;
+    // Пункт из таблицы rules (id < 0) заменяем фрагментом форума с ним: там подпункты, списки и исключения.
+    const point = h.chunk.id < 0 ? /^Пункт ([\d.]+):/.exec(text)?.[1] : undefined;
+    const full = point ? chunkForRulePoint(h.chunk.doc_url, point) : undefined;
+    if (full) {
+      if (seenText.has(normalizedText(full.text))) continue;
+      seenText.add(normalizedText(full.text));
+      ({ text, post_url: url } = full);
+    }
+    seenText.add(normalizedText(text));
+    fragments.push({ n: fragments.length + 1, title: h.chunk.title, url, text, kind });
   }
   // Без контекста AI всё равно отвечает (приветствие, общие вопросы), но правила без форума не придумывает — это в промпте.
   // В режиме «Только форум» отвечать не из чего — модель не вызываем.
@@ -178,7 +188,9 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     };
   }
 
-  const length = settings.answer_length === 'auto' ? ai.answerLength : settings.answer_length === 'long' ? 'long' : 'short';
+  const chosen = settings.answer_length === 'auto' ? ai.answerLength : settings.answer_length === 'long' ? 'long' : 'short';
+  // «Перечисли правила ограбления дома» в 3 коротких предложения не помещается — даём развёрнутый ответ.
+  const length = wantsList(question) ? 'long' : chosen;
   const extra = [TONE_PROMPTS[ai.tone], ai.instructions].filter(Boolean).join('\n') || null;
   let answer: string;
   let usedModel = creds.model;
@@ -188,7 +200,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
       system: prompt.system,
       user: prompt.user,
       temperature: ai.temperature ?? prompt.temperature,
-      maxTokens: ai.maxTokens ?? (length === 'long' ? 900 : 400),
+      maxTokens: ai.maxTokens ?? (length === 'long' ? (wantsList(question) ? 1600 : 900) : 400),
     };
     try {
       answer = await complete(creds.provider, creds.token, creds.model, request);
@@ -225,8 +237,37 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten };
 }
 
+/** Игрок просит перечислить правила, а не спрашивает про один случай. */
+export function wantsList(question: string): boolean {
+  return /(перечисл\p{L}*|список|все\s+правила|какие\s+(есть\s+)?правила|^\s*правила\s)/iu.test(question);
+}
+
 /** Короткие правила (мероприятия, события) передаём целиком: ответ часто в пункте, где нет слов из вопроса. */
 const WHOLE_DOC_MAX_CHARS = 4500;
+/**
+ * Полный текст темы (из фрагментов) — до этого размера. В таблице rules только «пункт + наказание»:
+ * там теряются «Исключение: Ограбление дома», вводная часть («раз в 24 часа», «нужен лом») и списки под пунктом
+ * («3.4 Минимальное количество грабителей: 2 игрока…»), и модель отвечала без них.
+ */
+const WHOLE_DOC_FULL_MAX_CHARS = 8000;
+
+/** Склеивает фрагменты темы: без картинок, вложений и повторённых в начале фрагментов заголовков разделов. */
+export function joinDocChunks(chunks: string[]): string {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const chunk of chunks) {
+    for (const raw of chunk.split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (/\.(png|jpe?g|gif|webp)$/i.test(line) || /^Посмотреть вложение/i.test(line) || /^Спойлер:/i.test(line)) continue;
+      // Заголовок раздела чанкер повторяет в каждом фрагменте; пункты и примечания не повторяются.
+      if (seen.has(line) && line.length < 120) continue;
+      seen.add(line);
+      out.push(line);
+    }
+  }
+  return out.join('\n');
+}
 
 /**
  * Правила, о которых вопрос: лучший результат поиска или не меньше двух фрагментов из одной темы.
@@ -242,6 +283,10 @@ function wholeRulesDoc(hits: SearchHit[]) {
   for (const docUrl of new Set(candidates)) {
     const rules = rulesForDoc(docUrl).filter((r) => !r.is_complaint);
     if (rules.length < 2) continue;
+    const full = joinDocChunks(chunkTextsForDoc(docUrl));
+    if (full.length <= WHOLE_DOC_FULL_MAX_CHARS) {
+      return { docUrl, title: rules[0].doc_title, url: rules[0].post_url, text: full, rules };
+    }
     const lines = rules.map((r) => `Пункт ${r.point}: ${r.text}${r.punishment ? ` Наказание: ${r.punishment}` : ''}`);
     const text = lines.join('\n');
     if (text.length > WHOLE_DOC_MAX_CHARS) continue;

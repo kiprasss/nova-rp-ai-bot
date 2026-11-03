@@ -1,6 +1,10 @@
 export function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
-  return text.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
+  const cut = text.slice(0, Math.max(0, max - 1));
+  // Длинный список режем по последней целой строке, а не посреди пункта.
+  const nl = cut.lastIndexOf('\n');
+  if (nl > max * 0.6) return cut.slice(0, nl).trimEnd() + '\n…';
+  return cut.trimEnd() + '…';
 }
 
 /** Нормализует номер пункта правил: «п. 5.4.» → «5.4». Возвращает null, если формат неверный. */

@@ -503,6 +503,21 @@ export interface RuleEventRow {
 
 export type NewRuleEvent = Omit<RuleEventRow, 'id' | 'ts'>;
 
+/**
+ * Фрагмент форума, в котором записан пункт (номер в начале строки). Пункт из таблицы rules — одна строка
+ * без соседних подпунктов, списков и «Исключение»: «6.6.1 амуниция за стрелу» без «6.6.3 не более $1.000.000».
+ */
+export function chunkForRulePoint(docUrl: string, point: string): { text: string; post_url: string } | undefined {
+  return all<{ text: string; post_url: string }>('SELECT text, post_url FROM chunks WHERE doc_url = ? ORDER BY idx', docUrl).find((c) =>
+    new RegExp(`(^|\\n)\\s*(Пункт\\s*)?${point.replace(/\./g, '\\.')}\\.?[\\s:]`).test(c.text),
+  );
+}
+
+/** Фрагменты одной темы по порядку — чтобы собрать её полный текст. */
+export function chunkTextsForDoc(docUrl: string): string[] {
+  return all<{ text: string }>('SELECT text FROM chunks WHERE doc_url = ? ORDER BY idx', docUrl).map((r) => r.text);
+}
+
 export function rulesForDoc(docUrl: string): RuleRow[] {
   return all<RuleRow>(
     `SELECT r.*, d.title AS doc_title, d.is_rules, d.is_complaint
