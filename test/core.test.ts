@@ -78,6 +78,12 @@ describe('search', () => {
     assert.match(expandSlang('дм в зз'), /DM DeathMatch/);
     assert.match(expandSlang('дм в зз'), /зелёная зона/);
     assert.equal(expandSlang('просто вопрос'), 'просто вопрос');
+    assert.match(expandSlang('какое оружие можно на капте'), /любого оружия снайперской винтовки пулеметов/);
+    assert.doesNotMatch(expandSlang('сколько людей на капт'), /любого оружия/);
+    assert.match(expandSlang('что будет за афк на капте'), /AFK уход от RP/);
+    assert.match(expandSlang('можно ли таранить копов'), /NonRP Drive/);
+    assert.match(expandSlang('где продавать наркотики'), /точки сбыта/);
+    assert.doesNotMatch(expandSlang('можно ли продавать машину'), /точки сбыта/);
 
     const idx = new Bm25Index();
     idx.build([
