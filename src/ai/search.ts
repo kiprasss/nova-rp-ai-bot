@@ -123,13 +123,43 @@ export function tokenize(text: string): string[] {
 
 const PREFIX = '~';
 
+/** Множитель для правил ивента, который вопрос не называет. */
+const UNNAMED_EVENT_FACTOR = 0.6;
+/** Множитель для архива и отчётов о прошедших ивентах (титульник → квест «Исчезновение в тенях | Проведен»). */
+const ARCHIVE_FACTOR = 0.4;
+
 /** Насколько поднимать фрагмент, если слова запроса есть в заголовке его темы (до ×1.8 при полном совпадении). */
 const TITLE_WEIGHT = 0.8;
 
 const GENERAL_RULES = /^Общие правила проекта/i;
 const EVENT_RULES = /^(Правила\s+)?(мероприяти|событи|ГМП)/iu;
 /** Слова заголовка ивента, которые его не выделяют («правила мероприятия Ограбление…» — общее, «банкомата» — нет). */
-const EVENT_GENERIC = new Set(tokenizeTitleGeneric('правила правил мероприятие мероприятия мероприятий событие события ограбление ограбления ограблений и'));
+const EVENT_GENERIC = new Set(
+  tokenizeTitleGeneric(
+    'правила правил мероприятие мероприятия мероприятий событие события ограбление ограбления ограблений и на для в ' +
+      'проведения нападения защиты находящихся территории государственных структур криминальные организации перевозки перекрытия',
+  ),
+);
+/** Раздел форума с правилами отдельных ивентов: «Форт-Занкудо», «рейды», «угон» — не общий ответ, если вопрос их не называет. */
+const EVENT_SECTION = /›\s*Общие правила мероприятий\s*$/iu;
+/** Узкие правила вне раздела ивентов: «допрос … РП» находился на «что такое РП». */
+const NARROW_RULES = /допрос/iu;
+
+/** Правила отдельного мероприятия/события или узкой процедуры (не «Общие правила …»). */
+export function isEventRules(c: Pick<ChunkRow, 'title' | 'breadcrumbs'>): boolean {
+  if (EVENT_RULES.test(c.title) || NARROW_RULES.test(c.title)) return true;
+  return EVENT_SECTION.test(c.breadcrumbs ?? '') && !/^Общие правила/iu.test(c.title);
+}
+
+/** Архив и отчёты о прошедших ивентах/квестах («… | Проведен»): на вопрос о правилах отвечают случайным совпадением слов. */
+export function isArchived(c: Pick<ChunkRow, 'title' | 'breadcrumbs' | 'is_rules'>): boolean {
+  return !c.is_rules && (/›\s*Архив(?!\p{L})/iu.test(c.breadcrumbs ?? '') || /\|\s*Проведен/iu.test(c.title));
+}
+
+/** Заполненная анкета игрока («Заявление на должность…»: имя, возраст, город) — не знание о правилах. */
+export function isPersonalForm(text: string): boolean {
+  return /Реальный\s+возраст\s*:/iu.test(text);
+}
 
 function tokenizeTitleGeneric(text: string): string[] {
   return tokenize(text);
@@ -222,7 +252,7 @@ export class Bm25Index {
       score *= 1 + matched / terms.length;
       // Заголовок темы говорит, о чём она: «жалоба на игрока» → «Правила подачи жалоб на игроков», а не «…на администрацию».
       // Доля считается по IDF слов запроса: частое «правила» есть почти в каждом заголовке и почти ничего не даёт.
-      const unnamedEvent = EVENT_RULES.test(d.chunk.title) && !eventNamed(d.titleTerms, termSet);
+      const unnamedEvent = isEventRules(d.chunk) && !eventNamed(d.titleTerms, termSet);
       // Совпадение с заголовком ивента по общему слову («ограбление» в «Ограбление банкомата») ни о чём не говорит.
       if (!unnamedEvent) score *= 1 + TITLE_WEIGHT * (titleIdf / idfTotal);
       // Жалобы — разбор конкретных случаев: слова совпадают часто, а отвечают на общий вопрос редко.
@@ -231,8 +261,9 @@ export class Bm25Index {
       // Общие правила проекта — главный ответ на общий вопрос («что будет за читы»), а не правила отдельного ивента.
       if (GENERAL_RULES.test(d.chunk.title)) score *= 1.3;
       // Правила отдельного мероприятия/события, а вопрос его не называет («грабить без отыгровки», а не «ограбление банкомата») —
-      // общий ответ скорее в тематических правилах, ивент чуть ниже.
-      if (unnamedEvent) score *= 0.8;
+      // общий ответ скорее в тематических правилах, ивент ниже: при ×0.8 «давить людей» отвечал пунктом Форт-Занкудо.
+      if (unnamedEvent) score *= UNNAMED_EVENT_FACTOR;
+      else if (isArchived(d.chunk)) score *= ARCHIVE_FACTOR;
       else if (d.chunk.is_complaint) score *= 0.6;
       hits.push({ chunk: d.chunk, score });
     }
@@ -249,7 +280,7 @@ export function invalidateSearchIndex(): void {
 function getIndex(): Bm25Index {
   if (!index) {
     index = new Bm25Index();
-    index.build([...allChunks(), ...ruleChunks()]);
+    index.build([...allChunks(), ...ruleChunks()].filter((c) => !isPersonalForm(c.text)));
   }
   return index;
 }

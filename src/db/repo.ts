@@ -128,6 +128,8 @@ export interface ChunkRow {
   title: string;
   is_rules: number;
   is_complaint: number;
+  /** Путь раздела форума («… › Общие правила мероприятий»): по нему видно, что тема — правила отдельного ивента. */
+  breadcrumbs?: string | null;
 }
 
 export interface RuleRow {
@@ -396,7 +398,7 @@ export function touchDocument(url: string, lastPostTs: number | null): void {
 
 export function allChunks(): ChunkRow[] {
   return all<ChunkRow>(
-    `SELECT c.id, c.doc_url, c.idx, c.post_url, c.text, d.title, d.is_rules, d.is_complaint
+    `SELECT c.id, c.doc_url, c.idx, c.post_url, c.text, d.title, d.is_rules, d.is_complaint, d.breadcrumbs
      FROM chunks c JOIN documents d ON d.url = c.doc_url`,
   );
 }
@@ -409,7 +411,7 @@ export function ruleChunks(): ChunkRow[] {
   return all<ChunkRow>(
     `SELECT -r.id AS id, r.doc_url, 0 AS idx, r.post_url,
             'Пункт ' || r.point || ': ' || r.text || COALESCE(char(10) || 'Наказание: ' || r.punishment, '') AS text,
-            d.title, d.is_rules, d.is_complaint
+            d.title, d.is_rules, d.is_complaint, d.breadcrumbs
      FROM rules r JOIN documents d ON d.url = r.doc_url
      WHERE d.is_rules = 1 AND d.is_complaint = 0`,
   );
