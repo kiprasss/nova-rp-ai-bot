@@ -11,6 +11,42 @@ import { logError } from './guildLog.js';
 import { handleSettingsInteraction } from './settingsMenu.js';
 import { channelIdFor } from './setupGuild.js';
 import { replyText } from './ui.js';
+import type { PreviousExchange } from '../ai/prompt.js';
+
+/** Сколько после ответа бота следующее сообщение игрока считается возможным продолжением разговора. */
+const FOLLOW_UP_MS = 10 * 60_000;
+
+/**
+ * Прошлый вопрос игрока и ответ бота: сообщение — ответ (reply) на сообщение бота
+ * или последний ответ бота этому игроку в канале был недавно. Модель сама решает, продолжение это или новая тема.
+ */
+async function previousExchange(client: Client, message: Message): Promise<PreviousExchange | null> {
+  const botId = client.user?.id;
+  if (!botId) return null;
+  try {
+    let botMsg: Message | null = null;
+    if (message.reference?.messageId) {
+      const ref = await message.fetchReference().catch(() => null);
+      if (ref?.author.id !== botId) return null;
+      botMsg = ref;
+    } else {
+      const recent = await message.channel.messages.fetch({ limit: 10, before: message.id });
+      botMsg =
+        [...recent.values()].find(
+          (m) => m.author.id === botId && m.mentions.repliedUser?.id === message.author.id,
+        ) ?? null;
+      if (!botMsg || message.createdTimestamp - botMsg.createdTimestamp > FOLLOW_UP_MS) return null;
+    }
+    if (!botMsg.reference?.messageId) return null;
+    const q = await botMsg.fetchReference().catch(() => null);
+    const question = q?.content.replace(/<@!?\d+>/g, '').trim();
+    const answer = botMsg.content.replace(/\n+\*\*Источники:\*\*[\s\S]*$/, '').trim();
+    return question && answer ? { question, answer } : null;
+  } catch (err) {
+    log.debug('Не удалось получить предыдущий вопрос', err);
+    return null;
+  }
+}
 
 const GENERIC_ERROR = '⚠️ Произошла внутренняя ошибка. Подробности переданы администрации, попробуйте позже.';
 
@@ -83,7 +119,7 @@ export async function onMessage(client: Client, message: Message): Promise<void>
         return;
       }
       if ('sendTyping' in message.channel) await message.channel.sendTyping().catch(() => undefined);
-      const res = await askSafely(client, null, message.author.id, content);
+      const res = await askSafely(client, null, message.author.id, content, await previousExchange(client, message));
       await message.reply({ content: res.text, allowedMentions: { repliedUser: false, parse: [] } });
       return;
     }
@@ -118,7 +154,7 @@ export async function onMessage(client: Client, message: Message): Promise<void>
       }
     }
     await message.channel.sendTyping().catch(() => undefined);
-    const res = await askSafely(client, gate.guildId, message.author.id, question);
+    const res = await askSafely(client, gate.guildId, message.author.id, question, await previousExchange(client, message));
     await message.reply({ content: res.text, allowedMentions: { repliedUser: false, parse: [] } });
   } catch (err) {
     await logError(client, message.guildId, 'Сообщение-вопрос', errorDetails(err), message.author.id);

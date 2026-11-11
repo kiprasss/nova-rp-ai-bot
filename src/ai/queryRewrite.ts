@@ -12,6 +12,8 @@ const SYSTEM = [
   '  «можно ли / накажут ли» → «запрещено …», «наказание»; «что такое X» → определение и синонимы X (RP → RolePlay ролевая игра отыгровка);',
   '  «как сделать / подать / стать» → названия процедуры, раздела, формы. Не добавляй общие слова, не связанные с вопросом;',
   '- если в вопросе есть номер пункта (например 5.4) — сохрани его.',
+  '- если дан предыдущий вопрос игрока, а новый его продолжает («а с титульника?», «а если…», «ну, титульный дом») — составь запрос по теме предыдущего с уточнением из нового;',
+  '  если новый вопрос самостоятельный — предыдущий не учитывай;',
   'Ответь ОДНОЙ строкой на русском: только ключевые слова через пробел, без пояснений, кавычек и списков.',
 ].join('\n');
 
@@ -63,12 +65,18 @@ export interface RewriteCredentials {
  * Если основная модель упёрлась в лимит или недоступна — пробуем резервную, как и для ответа.
  * При любой другой ошибке возвращает null — тогда поиск идёт только по исходному вопросу.
  */
-export async function rewriteQuery(creds: RewriteCredentials, question: string, fallbackModel?: string | null): Promise<string | null> {
-  const key = `${creds.provider}:${creds.model}:${question.trim().toLowerCase()}`;
+export async function rewriteQuery(
+  creds: RewriteCredentials,
+  question: string,
+  fallbackModel?: string | null,
+  previousQuestion?: string | null,
+): Promise<string | null> {
+  const prev = previousQuestion?.trim().slice(0, 300) || '';
+  const key = `${creds.provider}:${creds.model}:${prev.toLowerCase()}\n${question.trim().toLowerCase()}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
   // Запас для «думающих» моделей (gpt-oss, qwen3): их рассуждения тоже тратят лимит, и при 80 токенах ответ иногда пустой.
-  const req: ChatRequest = { system: SYSTEM, user: `Вопрос игрока: ${question}`, maxTokens: 160, temperature: 0 };
+  const req: ChatRequest = { system: SYSTEM, user: `${prev ? `Предыдущий вопрос игрока: ${prev}\n` : ''}Вопрос игрока: ${question}`, maxTokens: 160, temperature: 0 };
   try {
     let raw: string;
     try {

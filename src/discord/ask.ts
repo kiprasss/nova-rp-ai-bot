@@ -1,5 +1,6 @@
 import type { Client, Guild } from 'discord.js';
 import { aiErrorMessage, answerQuestion, type AskResult } from '../ai/answer.js';
+import type { PreviousExchange } from '../ai/prompt.js';
 import { AiError } from '../ai/providers.js';
 import { config } from '../config.js';
 import { QuestionRateLimiter } from '../util/rateLimit.js';
@@ -55,9 +56,15 @@ export async function gateQuestion(client: Client, guild: Guild | null, userId: 
 }
 
 /** Получает ответ; ошибки AI-провайдера превращает в понятный текст и пишет детали в #ai-логи. */
-export async function askSafely(client: Client, guildId: string | null, userId: string, question: string): Promise<AskResult> {
+export async function askSafely(
+  client: Client,
+  guildId: string | null,
+  userId: string,
+  question: string,
+  previous?: PreviousExchange | null,
+): Promise<AskResult> {
   try {
-    return await answerQuestion({ guildId, userId, question });
+    return await answerQuestion({ guildId, userId, question, previous });
   } catch (err) {
     const friendly = aiErrorMessage(err);
     if (friendly) {

@@ -52,6 +52,12 @@ export function chunkText(text: string, maxLen = 900, overlap = 120): string[] {
  * фрагмент, начатый посреди раздела, получает заголовок раздела. Слишком длинный пункт делится,
  * и каждое продолжение подписано номером пункта и его наказанием — иначе модель не знает, к чему относится текст.
  */
+/**
+ * Ненумерованные заголовки разделов «Правила для государственных структур», «Положение скаута для криминальных организаций»:
+ * без них пункт 2.1 «участвовать могут только сотрудники госструктур» модель принимала за правило для грабителей.
+ */
+const ROLE_SECTION_RE = /^(Правила|Положение|Обязанности)\s+(\p{L}+\s+)?для\s+[^|]+$/iu;
+
 export function chunkRulesText(text: string, maxLen = 1200, packLen = 600): string[] {
   const clean = text.trim();
   if (!clean) return [];
@@ -72,7 +78,7 @@ export function chunkRulesText(text: string, maxLen = 1200, packLen = 600): stri
     if (m) {
       push();
       cur = { text: line, point: m[1], section };
-    } else if ((SECTION_RE.test(line) || /^(Раздел|Глава)\s+\d+/iu.test(line)) && line.length <= 120) {
+    } else if ((SECTION_RE.test(line) || /^(Раздел|Глава)\s+\d+/iu.test(line) || ROLE_SECTION_RE.test(line)) && line.length <= 120) {
       push();
       section = line;
       cur = { text: line, point: null, section: null };

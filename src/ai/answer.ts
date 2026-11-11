@@ -4,7 +4,7 @@ import { chunkForRulePoint, chunkTextsForDoc, getGuild, getUserSettings, listFaq
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
-import { buildPrompt, cleanCitations, renumberCitations, type ContextFragment } from './prompt.js';
+import { buildPrompt, cleanCitations, renumberCitations, type ContextFragment, type PreviousExchange } from './prompt.js';
 import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
 import { lookupRule } from './ruleLookup.js';
 import { termDefinitions } from './glossary.js';
@@ -78,6 +78,8 @@ export interface AskInput {
   guildId: string | null;
   userId: string;
   question: string;
+  /** Прошлый вопрос игрока и ответ бота (за последние минуты) — для вопросов-продолжений. */
+  previous?: PreviousExchange | null;
 }
 
 export interface AskResult {
@@ -111,7 +113,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   const creds = resolved ? await ensureAvailableModel(resolved) : null;
 
   // «Бот ищет сам»: AI переписывает вопрос (опечатки, сленг, синонимы), ищем по обоим вариантам.
-  const aiRewrite = creds && ai.rewrite ? await rewriteQuery(creds, question, ai.fallbackModel) : null;
+  const aiRewrite = creds && ai.rewrite ? await rewriteQuery(creds, question, ai.fallbackModel, input.previous?.question) : null;
   const slang = expandSlang(question);
   const rewritten = [aiRewrite, slang].filter(Boolean).join(' ') || null;
   const searchText = rewritten ? `${question}\n${rewritten}` : question;
@@ -195,7 +197,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   let answer: string;
   let usedModel = creds.model;
   try {
-    const prompt = buildPrompt(promptStyleFor(creds.provider, creds.model), length, question, fragments, extra, ai.forumOnly);
+    const prompt = buildPrompt(promptStyleFor(creds.provider, creds.model), length, question, fragments, extra, ai.forumOnly, input.previous);
     const request = {
       system: prompt.system,
       user: prompt.user,

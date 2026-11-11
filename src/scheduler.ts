@@ -52,7 +52,7 @@ async function complaintTick(client: Client): Promise<void> {
 }
 
 /** Меняется, когда меняется разбивка тем на фрагменты: темы с правилами переиндексируются при старте. */
-const INDEX_VERSION = '2';
+const INDEX_VERSION = '3';
 
 function reindexIfNeeded(): void {
   if (getMeta('index_version') === INDEX_VERSION) return;

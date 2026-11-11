@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { chunkText } from '../src/forum/chunker.js';
+import { chunkRulesText, chunkText } from '../src/forum/chunker.js';
 import { isBotChallenge } from '../src/forum/http.js';
 import { parseForum, parseThread } from '../src/forum/parser.js';
 import { extractRules, splitPunishment } from '../src/forum/rules.js';
@@ -141,5 +141,30 @@ describe('chunkText', () => {
   it('режет очень длинную строку без переносов', () => {
     const chunks = chunkText('а'.repeat(2000), 500, 0);
     assert.equal(chunks.length, 4);
+  });
+});
+
+describe('chunkRulesText', () => {
+  it('ненумерованный заголовок «Правила для …» становится разделом и подписывает пункты', () => {
+    const filler = (n: string) => `${n} Запрещено ${'что-то очень длинное '.repeat(20)}| JAIL до 120 минут.`;
+    const text = [
+      'Общее положение',
+      filler('1.1'),
+      filler('1.2'),
+      'Правила для государственных структур',
+      '2.1 В мероприятии могут принять участие только сотрудники государственных структур. | JAIL до 180 минут.',
+      filler('2.2'),
+      'Правила для криминальных организаций',
+      '3.1 В мероприятии могут принять участие только члены криминальных фракций. | JAIL до 180 минут.',
+      filler('3.2'),
+    ].join('\n');
+    const chunks = chunkRulesText(text);
+    const gov = chunks.find((c) => c.includes('2.1 В мероприятии'));
+    const crime = chunks.find((c) => c.includes('3.1 В мероприятии'));
+    assert.ok(gov?.includes('Правила для государственных структур'));
+    assert.ok(crime?.includes('Правила для криминальных организаций'));
+    assert.ok(!crime?.includes('Правила для государственных структур'));
+    // Пункт 2.2 начинает новый фрагмент посреди раздела — тоже получает заголовок.
+    assert.ok(chunks.find((c) => c.includes('2.2 Запрещено'))?.startsWith('Правила для государственных структур'));
   });
 });

@@ -8,7 +8,7 @@ import { answerQuestion } from './ai/answer.js';
  * npm run ask -- [--guild <id>] [--file вопросы.txt] [--context] [--delay сек] ["вопрос" ...]
  * Задать боту вопросы без Discord — тот же поиск, промпт и модель, что и на сервере.
  * Нужно для настройки промпта: спросили → посмотрели ответ → поправили src/ai/prompt.ts → снова спросили.
- * В файле — по одному вопросу на строку, строки с # пропускаются. --context — показать фрагменты, которые получила модель.
+ * В файле — по одному вопросу на строку, строки с # пропускаются, «> вопрос» — продолжение предыдущего. --context — показать фрагменты, которые получила модель.
  */
 const args = process.argv.slice(2);
 let guildId: string | null = null;
@@ -37,10 +37,15 @@ guildId ??=
   (db.prepare('SELECT guild_id FROM guilds WHERE ai_token IS NOT NULL ORDER BY guild_id LIMIT 1').get() as { guild_id: string } | undefined)
     ?.guild_id ?? null;
 
-for (const [i, question] of questions.entries()) {
-  console.log(`\n=== [${i + 1}/${questions.length}] ${question}`);
+// Строка, начинающаяся с «>», — продолжение разговора: бот получает предыдущий вопрос и свой ответ.
+let previous: { question: string; answer: string } | null = null;
+for (const [i, line] of questions.entries()) {
+  const followUp = line.startsWith('>');
+  const question = followUp ? line.slice(1).trim() : line;
+  console.log(`\n=== [${i + 1}/${questions.length}] ${followUp ? '↳ ' : ''}${question}`);
   try {
-    const r = await answerQuestion({ guildId, userId: 'ask-cli', question });
+    const r = await answerQuestion({ guildId, userId: 'ask-cli', question, previous: followUp ? previous : null });
+    previous = { question, answer: r.text.replace(/\n+\*\*Источники:\*\*[\s\S]*$/, '') };
     if (showContext) {
       if (r.kind === 'ai') console.log(`  поиск: ${r.rewritten ?? '(AI не переписал запрос)'}`);
       for (const f of r.fragments ?? []) console.log(`  [${f.n}] (${f.kind ?? '?'}) ${f.title}: ${f.text.replace(/\s+/g, ' ').slice(0, 160)}`);
