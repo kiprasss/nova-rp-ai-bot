@@ -349,3 +349,42 @@ export function citedNumbers(answer: string): number[] {
   for (const m of answer.matchAll(/\[(\d{1,2})\]/g)) nums.add(Number(m[1]));
   return [...nums].sort((a, b) => a - b);
 }
+
+/**
+ * Перенумеровывает ссылки ответа по порядку появления: [1], [2], [3]… без пропусков.
+ * Фрагменты из одной темы (один адрес) получают один номер — раньше в тексте оставалось [6],
+ * а в «Источниках» его не было, потому что та же тема уже стояла под [1].
+ * Номера несуществующих фрагментов и ссылки сверх лимита источников убираются, повторы [1][1] схлопываются.
+ */
+export function renumberCitations(
+  answer: string,
+  fragments: ContextFragment[],
+  maxSources = 5,
+): { text: string; sources: { n: number; title: string; url: string }[] } {
+  const byUrl = new Map<string, number>();
+  const sources: { n: number; title: string; url: string }[] = [];
+  const map = new Map<number, number | null>();
+  for (const m of answer.matchAll(/\[(\d{1,2})\]/g)) {
+    const old = Number(m[1]);
+    if (map.has(old)) continue;
+    const f = old >= 1 && old <= fragments.length ? fragments[old - 1] : undefined;
+    if (!f) {
+      map.set(old, null);
+      continue;
+    }
+    let n = byUrl.get(f.url);
+    if (n === undefined && sources.length < maxSources) {
+      n = sources.length + 1;
+      byUrl.set(f.url, n);
+      sources.push({ n, title: f.title, url: f.url });
+    }
+    map.set(old, n ?? null);
+  }
+  const text = answer
+    .replace(/\s?\[(\d{1,2})\]/g, (whole, d: string) => {
+      const n = map.get(Number(d));
+      return n ? whole.replace(/\[\d{1,2}\]/, `[${n}]`) : '';
+    })
+    .replace(/(\[\d{1,2}\])(?:\1)+/g, '$1');
+  return { text, sources };
+}

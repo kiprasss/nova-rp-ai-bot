@@ -4,7 +4,7 @@ import { chunkForRulePoint, chunkTextsForDoc, getGuild, getUserSettings, listFaq
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
-import { buildPrompt, citedNumbers, cleanCitations, type ContextFragment } from './prompt.js';
+import { buildPrompt, cleanCitations, renumberCitations, type ContextFragment } from './prompt.js';
 import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
 import { lookupRule } from './ruleLookup.js';
 import { termDefinitions } from './glossary.js';
@@ -222,13 +222,10 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
 
   let sources = '';
   if (settings.show_sources && ai.showSources) {
-    const cited = citedNumbers(answer).filter((n) => n >= 1 && n <= fragments.length);
     // Только то, на что модель сослалась: ответ из общих знаний без [n] — без источников, а не с первыми попавшимися.
-    const used = cited.map((n) => fragments[n - 1]).slice(0, 5);
-    const seen = new Set<string>();
-    const lines = used
-      .filter((f) => !seen.has(f.url) && seen.add(f.url))
-      .map((f) => `[${f.n}] ${truncate(f.title, 60)} — <${f.url}>`);
+    const renumbered = renumberCitations(answer, fragments);
+    answer = renumbered.text;
+    const lines = renumbered.sources.map((s) => `[${s.n}] ${truncate(s.title, 60)} — <${s.url}>`);
     if (lines.length) sources = `\n\n**Источники:**\n${lines.join('\n')}`;
   } else {
     answer = answer.replace(/\s?\[\d{1,2}\]/g, '');

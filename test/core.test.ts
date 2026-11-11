@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { matchFaq } from '../src/ai/faq.js';
-import { buildPrompt, citedNumbers, cleanCitations } from '../src/ai/prompt.js';
+import { buildPrompt, citedNumbers, cleanCitations, renumberCitations } from '../src/ai/prompt.js';
 import { PROVIDERS, isReasoningModel, promptStyleFor, rankModels, stripReasoning } from '../src/ai/providers.js';
 import { diffRules } from '../src/forum/ruleDiff.js';
 import { isDeletableBotMessage, parseMessageRef } from '../src/commands/clean.js';
@@ -227,6 +227,13 @@ describe('prompt', () => {
     assert.equal(cleanCitations('Форма [1][1.1], видео [2.1]. Срок [1.1, 2.1, 3.1].'), 'Форма [1], видео. Срок.');
     assert.equal(cleanCitations('Рейд [1, 5], досмотр [2], [3].'), 'Рейд [1][5], досмотр [2][3].');
     assert.deepEqual(citedNumbers(cleanCitations('Рейд [1, 5].')), [1, 5]);
+    const frag = (n: number, url: string) => ({ n, title: `T${url}`, url, text: '', kind: 'rule' as const });
+    const frags = [frag(1, 'a'), frag(2, 'b'), frag(3, 'c'), frag(4, 'b'), frag(5, 'd'), frag(6, 'a')];
+    const r = renumberCitations('Нельзя [1][6]. Ещё [4] и [2], нет [9].', frags);
+    assert.equal(r.text, 'Нельзя [1]. Ещё [2] и [2], нет.');
+    assert.deepEqual(r.sources.map((s) => [s.n, s.url]), [[1, 'a'], [2, 'b']]);
+    assert.deepEqual(renumberCitations('Ответ [5] и [3].', frags).sources.map((s) => s.n), [1, 2]);
+    assert.equal(renumberCitations('Ответ [5] и [3].', frags).text, 'Ответ [1] и [2].');
   });
 });
 
