@@ -398,6 +398,14 @@ describe('термины RP', () => {
     assert.deepEqual(detectTerms('что такое рп?').map((t) => t.abbr), ['RP']);
     assert.deepEqual(detectTerms('кто такой рп').map((t) => t.abbr), ['RP']);
     assert.deepEqual(detectTerms('можно ли нарушать рп в зз').map((t) => t.abbr), []);
+  });
+  it('враждебная дипломатия — по формам слова и «война с …», но не «война за территории»', () => {
+    const vd = (q: string) => detectTerms(q).some((t) => t.abbr === 'враждебная дипломатия');
+    assert.ok(vd('можно ли открыть огонь по враждебной в дипломатии семье?'));
+    assert.ok(vd('можно ли убивать враждующую семью'));
+    assert.ok(vd('у нас война с бандой, можно их убивать?'));
+    assert.ok(!vd('правила войны за территории'));
+    assert.ok(!vd('можно ли стрелять в городе'));
     assert.deepEqual(detectTerms('мг это что').map((t) => t.abbr), ['MG']);
     assert.deepEqual(detectTerms('дмить можно?').map((t) => t.abbr), ['DM']);
     assert.equal(detectTerms('дмитрий привет').length, 0);

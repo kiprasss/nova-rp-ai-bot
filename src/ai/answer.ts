@@ -128,7 +128,9 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
       n: fragments.length + 1,
       title: r.doc_title,
       url: r.post_url,
-      text: `Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}`,
+      text:
+        `Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}` +
+        (r.context ? `\nИз вступления к этим правилам:\n${r.context}` : ''),
       kind: 'rule',
     });
   }
