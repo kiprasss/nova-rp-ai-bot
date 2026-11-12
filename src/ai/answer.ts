@@ -5,7 +5,7 @@ import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
 import { buildPrompt, cleanCitations, renumberCitations, type ContextFragment, type PreviousExchange } from './prompt.js';
-import { AiError, PROVIDERS, complete, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
+import { AiError, PROVIDERS, completeWithReasoning, isProviderId, listModels, promptStyleFor, type ProviderId } from './providers.js';
 import { lookupRule } from './ruleLookup.js';
 import { termDefinitions } from './glossary.js';
 import { expandSlang, rewriteQuery } from './queryRewrite.js';
@@ -89,6 +89,10 @@ export interface AskResult {
   fragments?: ContextFragment[];
   /** Поисковый запрос, который составил AI (null — переписать не удалось). */
   rewritten?: string | null;
+  /** Черновик модели (<analysis>) — для #ai-логи и ask-cli --analysis, игроку не показывается. */
+  analysis?: string | null;
+  /** Какая модель ответила (основная или резервная). */
+  model?: string;
 }
 
 const NO_DATA =
@@ -197,6 +201,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   const length = wantsList(question) ? 'long' : chosen;
   const extra = [TONE_PROMPTS[ai.tone], ai.instructions].filter(Boolean).join('\n') || null;
   let answer: string;
+  let analysis: string | null = null;
   let usedModel = creds.model;
   try {
     const prompt = buildPrompt(promptStyleFor(creds.provider, creds.model), length, question, fragments, extra, ai.forumOnly, input.previous);
@@ -207,14 +212,14 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
       maxTokens: ai.maxTokens ?? (length === 'long' ? (wantsList(question) ? 1600 : 900) : 400),
     };
     try {
-      answer = await complete(creds.provider, creds.token, creds.model, request);
+      ({ text: answer, reasoning: analysis } = await completeWithReasoning(creds.provider, creds.token, creds.model, request));
     } catch (err) {
       // Резервная модель: при лимитах, недоступности или удалённой модели пробуем вторую.
       const retryable = err instanceof AiError && (err.status === 0 || err.status === 404 || err.status === 429 || err.status >= 500);
       if (!retryable || !ai.fallbackModel || ai.fallbackModel === creds.model) throw err;
       log.warn(`Основная модель ${creds.model} не ответила (${(err as AiError).status}), пробую резервную ${ai.fallbackModel}`);
       usedModel = ai.fallbackModel;
-      answer = await complete(creds.provider, creds.token, ai.fallbackModel, request);
+      ({ text: answer, reasoning: analysis } = await completeWithReasoning(creds.provider, creds.token, ai.fallbackModel, request));
     }
     recordAiRequest(input.guildId, input.userId, 'ask', true);
   } catch (err) {
@@ -235,7 +240,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     answer = answer.replace(/\s?\[\d{1,2}\]/g, '');
   }
 
-  return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten };
+  return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten, analysis, model: usedModel };
 }
 
 /** Игрок просит перечислить правила, а не спрашивает про один случай. */

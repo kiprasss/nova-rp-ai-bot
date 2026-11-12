@@ -251,7 +251,22 @@ export function stripReasoning(text: string): string {
     .trim();
 }
 
+/** Черновик модели (<analysis> / <think>) — для отладки: в #ai-логи и `ask-cli --analysis`. Игроку не показывается. */
+export function extractReasoning(text: string): string | null {
+  const parts = [...text.matchAll(/<(think|analysis)>([\s\S]*?)(?:<\/\1>|<answer>|$)/gi)].map((m) => m[2].trim()).filter(Boolean);
+  return parts.length ? parts.join('\n\n') : null;
+}
+
 export async function complete(provider: ProviderId, token: string, model: string, req: ChatRequest): Promise<string> {
+  return (await completeWithReasoning(provider, token, model, req)).text;
+}
+
+export async function completeWithReasoning(
+  provider: ProviderId,
+  token: string,
+  model: string,
+  req: ChatRequest,
+): Promise<{ text: string; reasoning: string | null }> {
   const effective = isReasoningModel(model) ? { ...req, maxTokens: req.maxTokens * 4 } : req;
   let text: string;
   try {
@@ -268,9 +283,10 @@ export async function complete(provider: ProviderId, token: string, model: strin
     }
     throw err;
   }
+  const reasoning = extractReasoning(text);
   text = stripReasoning(text);
   if (!text) throw new AiError(200, 'AI-провайдер вернул пустой ответ. Попробуйте переформулировать вопрос.', 'empty completion');
-  return text;
+  return { text, reasoning };
 }
 
 // ---------- Актуальный список моделей у провайдера ----------

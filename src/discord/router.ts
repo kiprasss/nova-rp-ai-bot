@@ -7,7 +7,7 @@ import { UserError, errorDetails } from '../util/errors.js';
 import { log } from '../util/logger.js';
 import { askSafely, gateQuestion } from './ask.js';
 import { handleDmInteraction } from './dmMenu.js';
-import { logError } from './guildLog.js';
+import { logAnswerTrace, logError } from './guildLog.js';
 import { handleSettingsInteraction } from './settingsMenu.js';
 import { channelIdFor } from './setupGuild.js';
 import { replyText } from './ui.js';
@@ -149,13 +149,15 @@ export async function onMessage(client: Client, message: Message): Promise<void>
       if (thread) {
         await thread.sendTyping().catch(() => undefined);
         const res = await askSafely(client, gate.guildId, message.author.id, question);
-        await thread.send({ content: res.text, allowedMentions: { parse: [] } });
+        const sent = await thread.send({ content: res.text, allowedMentions: { parse: [] } });
+        void logAnswerTrace(client, gate.guildId, message.author.id, question, res, sent.url);
         return;
       }
     }
     await message.channel.sendTyping().catch(() => undefined);
     const res = await askSafely(client, gate.guildId, message.author.id, question, await previousExchange(client, message));
-    await message.reply({ content: res.text, allowedMentions: { repliedUser: false, parse: [] } });
+    const sent = await message.reply({ content: res.text, allowedMentions: { repliedUser: false, parse: [] } });
+    void logAnswerTrace(client, gate.guildId, message.author.id, question, res, sent.url);
   } catch (err) {
     await logError(client, message.guildId, 'Сообщение-вопрос', errorDetails(err), message.author.id);
     await message.reply('⚠️ Не удалось получить ответ. Попробуйте позже.').catch(() => undefined);

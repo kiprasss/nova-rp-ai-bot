@@ -22,7 +22,7 @@ import { COMPLAINTS_FORUM_URL } from '../config.js';
 import { getFaq, getGuild, listFaq, searchRulePoints, type RuleRow } from '../db/repo.js';
 import { askSafely, gateQuestion } from '../discord/ask.js';
 import { buildDmHome } from '../discord/dmMenu.js';
-import { COLORS, audit } from '../discord/guildLog.js';
+import { COLORS, audit, logAnswerTrace } from '../discord/guildLog.js';
 import { computePerms, fetchMember, isGuildAdmin } from '../discord/permissions.js';
 import { applySetup, inspectSetup, postSettingsMenu, CHANNEL_NAMES } from '../discord/setupGuild.js';
 import { startRefresh } from '../discord/settingsMenu.js';
@@ -148,7 +148,9 @@ async function cmdAsk(i: ChatInputCommandInteraction) {
   }
   await i.deferReply({ flags: hidden ? MessageFlags.Ephemeral : undefined });
   const res = await askSafely(i.client, gate.guildId, i.user.id, question);
-  await i.editReply({ content: res.text, allowedMentions: { parse: [] } });
+  const sent = await i.editReply({ content: res.text, allowedMentions: { parse: [] } });
+  // Скрытый ответ виден только игроку — ссылку на него не даём.
+  void logAnswerTrace(i.client, gate.guildId, i.user.id, question, res, hidden ? undefined : sent.url);
 }
 
 // ---------- /правило и /наказание ----------

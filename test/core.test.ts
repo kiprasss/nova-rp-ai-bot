@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { matchFaq } from '../src/ai/faq.js';
 import { buildPrompt, citedNumbers, cleanCitations, renumberCitations } from '../src/ai/prompt.js';
-import { PROVIDERS, isReasoningModel, promptStyleFor, rankModels, stripReasoning } from '../src/ai/providers.js';
+import { PROVIDERS, extractReasoning, isReasoningModel, promptStyleFor, rankModels, stripReasoning } from '../src/ai/providers.js';
 import { diffRules } from '../src/forum/ruleDiff.js';
 import { isDeletableBotMessage, parseMessageRef } from '../src/commands/clean.js';
 import { recommendedUserLimit } from '../src/discord/wizard.js';
@@ -206,6 +206,10 @@ describe('prompt', () => {
     assert.equal(stripReasoning('<think>хм</think>\nОтвет [1]'), 'Ответ [1]');
     assert.equal(stripReasoning('<analysis>про станок, [1]</analysis>\n<answer>\nПункт 1.6 [1].\n</answer>'), 'Пункт 1.6 [1].');
     assert.equal(stripReasoning('<analysis>черновик</analysis>\nОтвет'), 'Ответ');
+    assert.equal(extractReasoning('<analysis>\nпро станок, [1]\n</analysis>\n<answer>Пункт 1.6</answer>'), 'про станок, [1]');
+    // Модель не закрыла тег — черновик всё равно до <answer>.
+    assert.equal(extractReasoning('<analysis>черновик\n<answer>Ответ</answer>'), 'черновик');
+    assert.equal(extractReasoning('Просто ответ'), null);
   });
   it('список моделей от провайдера: без не-чат моделей, известные — первыми', () => {
     const ranked = rankModels('groq', [

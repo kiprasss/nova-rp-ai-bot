@@ -1,4 +1,5 @@
 import { EmbedBuilder, type Client } from 'discord.js';
+import type { AskResult } from '../ai/answer.js';
 import { addAudit, getGuild } from '../db/repo.js';
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
@@ -47,5 +48,33 @@ export async function audit(client: Client, guildId: string, userId: string, act
       .setColor(COLORS.audit)
       .setTitle('🛠 Изменение настроек')
       .setDescription(`<@${userId}> — **${action}**${details ? `\n${truncate(details, 1500)}` : ''}`),
+  );
+}
+
+/**
+ * «Ход мыслей» бота в #ai-логи: вопрос, поисковый запрос, фрагменты форума и черновик модели (<analysis>).
+ * Помогает администрации понять, почему бот ответил именно так. Только для ответов AI (не FAQ/ошибок).
+ */
+export async function logAnswerTrace(
+  client: Client,
+  guildId: string | null,
+  userId: string,
+  question: string,
+  res: AskResult,
+  replyUrl?: string,
+): Promise<void> {
+  if (!guildId || res.kind !== 'ai' || !res.fragments) return;
+  const frags = res.fragments.map((f) => `[${f.n}] ${truncate(f.title, 70)}`).join('\n') || '—';
+  const parts = [
+    `**Игрок:** <@${userId}>${replyUrl ? ` · [ответ](${replyUrl})` : ''}${res.model ? ` · ${res.model}` : ''}`,
+    `**Вопрос:** ${truncate(question.replace(/\s+/g, ' '), 300)}`,
+    `**Поиск:** ${truncate(res.rewritten ?? '(без AI-переписывания)', 300)}`,
+    `**Фрагменты:**\n${truncate(frags, 900)}`,
+    `**Черновик модели:**\n${res.analysis ? truncate(res.analysis, 2300) : '(модель не написала черновик)'}`,
+  ];
+  await logToGuild(
+    client,
+    guildId,
+    new EmbedBuilder().setColor(COLORS.info).setTitle('🧠 Ход мыслей бота').setDescription(truncate(parts.join('\n\n'), 4000)),
   );
 }
