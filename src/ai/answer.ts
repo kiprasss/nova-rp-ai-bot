@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { secrets } from '../crypto.js';
-import { chunkForRulePoint, chunkTextsForDoc, getGuild, getUserSettings, listFaq, recordAiRequest, rulesForDoc } from '../db/repo.js';
+import { chunkForRulePoint, chunkTextsForDoc, getGuild, getUserSettings, knowledgeVersion, listFaq, recordAiRequest, rulesForDoc } from '../db/repo.js';
 import { log } from '../util/logger.js';
 import { truncate } from '../util/text.js';
 import { matchFaq } from './faq.js';
@@ -115,6 +116,23 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
 
   const resolved = resolveCredentials(input.guildId, input.userId);
   const creds = resolved ? await ensureAvailableModel(resolved) : null;
+
+  // Тот же вопрос при той же базе форума — тот же ответ, без нового поиска и вызова AI. Модель (Haiku 5.5 не принимает
+  // temperature) и AI-переписывание запроса на повтор иногда отвечали иначе («Нет» / «Зависит»), и казалось, что бот выдумывает.
+  const cacheKey = creds
+    ? answerCacheKey([
+        input.guildId ?? 'dm',
+        `${creds.provider}:${creds.model}`,
+        settings.answer_length,
+        JSON.stringify(ai),
+        String(settings.show_sources),
+        normalizeQuestion(question),
+        input.previous ? normalizeQuestion(input.previous.question) : '',
+        knowledgeVersion(),
+      ])
+    : null;
+  const cached = cacheKey ? answerCache.get(cacheKey) : undefined;
+  if (cached && Date.now() - cached.at < ANSWER_CACHE_MS) return cached.result;
 
   // «Бот ищет сам»: AI переписывает вопрос (опечатки, сленг, синонимы), ищем по обоим вариантам.
   const aiRewrite = creds && ai.rewrite ? await rewriteQuery(creds, question, ai.fallbackModel, input.previous?.question) : null;
@@ -239,7 +257,12 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     answer = answer.replace(/\s?\[\d{1,2}\]/g, '');
   }
 
-  return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten, analysis, model: usedModel };
+  const result: AskResult = { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten, analysis, model: usedModel };
+  if (cacheKey) {
+    if (answerCache.size >= ANSWER_CACHE_SIZE) answerCache.delete(answerCache.keys().next().value!);
+    answerCache.set(cacheKey, { at: Date.now(), result });
+  }
+  return result;
 }
 
 /** Строка пункта или заголовок раздела: «4.3 Powergaming…», «5. Игровой процесс», «Пункт 4.2:». */
@@ -263,6 +286,20 @@ function ruleWithDetails(r: { doc_url: string; point: string; text: string; puni
     if (l.trim()) details.push(l.trim());
   }
   return details.length ? `${base}\n${truncate(details.join('\n'), 1200)}` : base;
+}
+
+/** Готовые ответы: ключ — вопрос, настройки и точный текст фрагментов форума (изменился форум — ответ заново). */
+const answerCache = new Map<string, { at: number; result: AskResult }>();
+const ANSWER_CACHE_SIZE = 500;
+const ANSWER_CACHE_MS = 24 * 60 * 60_000;
+
+/** «Могу ли я давить людей, если они по мне стреляют?» = «могу ли я  давить людей если они по мне стреляют». */
+export function normalizeQuestion(q: string): string {
+  return q.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}.]+/gu, ' ').replace(/\.(?!\d)/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function answerCacheKey(parts: string[]): string {
+  return createHash('sha256').update(parts.join('\u0000')).digest('hex');
 }
 
 /** Игрок просит перечислить правила, а не спрашивает про один случай. */

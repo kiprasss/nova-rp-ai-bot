@@ -72,7 +72,8 @@ export async function rewriteQuery(
   previousQuestion?: string | null,
 ): Promise<string | null> {
   const prev = previousQuestion?.trim().slice(0, 300) || '';
-  const key = `${creds.provider}:${creds.model}:${prev.toLowerCase()}\n${question.trim().toLowerCase()}`;
+  const norm = (t: string) => t.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}.]+/gu, ' ').replace(/\.(?!\d)/g, ' ').replace(/\s+/g, ' ').trim();
+  const key = `${creds.provider}:${creds.model}:${norm(prev)}\n${norm(question)}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
   // Запас для «думающих» моделей (gpt-oss, qwen3): их рассуждения тоже тратят лимит, и при 80 токенах ответ иногда пустой.

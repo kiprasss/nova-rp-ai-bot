@@ -760,3 +760,18 @@ export function aiRequestStats(guildId: string): { total: number; day: number; f
 export function addAudit(guildId: string | null, userId: string, action: string, details: string | null): void {
   run('INSERT INTO audit_log (guild_id, user_id, action, details, ts) VALUES (?, ?, ?, ?, ?)', guildId, userId, action, details, Date.now());
 }
+
+let kbVersionCache: { at: number; value: string } | null = null;
+
+/**
+ * Версия базы знаний: меняется, когда меняется содержимое любой темы (content_hash) или их набор.
+ * Для кэша готовых ответов — после обновления форума ответы генерируются заново. Пересчёт не чаще раза в минуту.
+ */
+export function knowledgeVersion(): string {
+  if (kbVersionCache && Date.now() - kbVersionCache.at < 60_000) return kbVersionCache.value;
+  const row = get<{ v: string | null }>(
+    "SELECT group_concat(url || ':' || coalesce(content_hash, ''), '|') AS v FROM (SELECT url, content_hash FROM documents ORDER BY url)",
+  );
+  kbVersionCache = { at: Date.now(), value: row?.v ?? '' };
+  return kbVersionCache.value;
+}
