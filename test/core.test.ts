@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { matchFaq } from '../src/ai/faq.js';
-import { buildPrompt, citedNumbers, cleanCitations, renumberCitations } from '../src/ai/prompt.js';
+import { buildPrompt, citedNumbers, cleanCitations, pointQuote, renumberCitations, withTextFragment } from '../src/ai/prompt.js';
 import { PROVIDERS, extractReasoning, isReasoningModel, promptStyleFor, rankModels, stripReasoning } from '../src/ai/providers.js';
 import { diffRules } from '../src/forum/ruleDiff.js';
 import { isDeletableBotMessage, parseMessageRef } from '../src/commands/clean.js';
@@ -247,6 +247,22 @@ describe('prompt', () => {
     assert.deepEqual(r.sources.map((s) => [s.n, s.url]), [[1, 'a'], [2, 'b']]);
     assert.deepEqual(renumberCitations('Ответ [5] и [3].', frags).sources.map((s) => s.n), [1, 2]);
     assert.equal(renumberCitations('Ответ [5] и [3].', frags).text, 'Ответ [1] и [2].');
+  });
+  it('ссылка прокручивает тему до пункта из ответа (текстовый фрагмент)', () => {
+    const f = (n: number, url: string, text: string) => ({ n, title: 'Общие правила', url, text, kind: 'rule' as const });
+    const frags = [
+      f(1, 'https://f/threads/1/#post-9', '4. RolePlay процесс\n4.2 DriveBy (DB) | JAIL до 120 минут.\nубийство за рулём'),
+      f(2, 'https://f/threads/1/#post-9', 'Пункт 4.15.1: Запрещено уходить от активного RP-взаимодействия (погони) в безопасные локации\nНаказание: WARN'),
+      f(3, 'https://f/threads/2/', 'Жалоба без пунктов'),
+    ];
+    const r = renumberCitations('Это DriveBy, пункт 4.2 [1], а уход — 4.15.1 [2]; штраф 2.500$ [3].', frags);
+    assert.deepEqual(r.sources.map((s) => s.url), [
+      'https://f/threads/1/#post-9:~:text=4.2%20DriveBy%20%28DB%29&text=4.15.1%20%D0%97%D0%B0%D0%BF%D1%80%D0%B5%D1%89%D0%B5%D0%BD%D0%BE%20%D1%83%D1%85%D0%BE%D0%B4%D0%B8%D1%82%D1%8C%20%D0%BE%D1%82%20%D0%B0%D0%BA%D1%82%D0%B8%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE',
+      'https://f/threads/2/',
+    ]);
+    assert.equal(pointQuote('4.2', frags), '4.2 DriveBy (DB)');
+    assert.equal(pointQuote('4.1', frags), null);
+    assert.equal(withTextFragment('https://f/t/', ['RP-ситуация']), 'https://f/t/#:~:text=RP%2D%D1%81%D0%B8%D1%82%D1%83%D0%B0%D1%86%D0%B8%D1%8F');
   });
 });
 

@@ -234,7 +234,8 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
     // Только то, на что модель сослалась: ответ из общих знаний без [n] — без источников, а не с первыми попавшимися.
     const renumbered = renumberCitations(answer, fragments);
     answer = renumbered.text;
-    const lines = renumbered.sources.map((s) => `[${s.n}] ${truncate(s.title, 60)} — <${s.url}>`);
+    // Ссылка с прокруткой до пункта длинная (#…:~:text=…), поэтому — под названием темы, а не голым URL.
+    const lines = renumbered.sources.map((s) => `[${s.n}] [${truncate(s.title, 60).replace(/[[\]]/g, '')}](<${s.url}>)`);
     if (lines.length) sources = `\n\n**Источники:**\n${lines.join('\n')}`;
   } else {
     answer = answer.replace(/\s?\[\d{1,2}\]/g, '');

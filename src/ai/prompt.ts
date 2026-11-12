@@ -388,6 +388,7 @@ export function renumberCitations(
   const byUrl = new Map<string, number>();
   const sources: { n: number; title: string; url: string }[] = [];
   const map = new Map<number, number | null>();
+  const fragsBySource = new Map<number, ContextFragment[]>();
   for (const m of answer.matchAll(/\[(\d{1,2})\]/g)) {
     const old = Number(m[1]);
     if (map.has(old)) continue;
@@ -402,6 +403,7 @@ export function renumberCitations(
       byUrl.set(f.url, n);
       sources.push({ n, title: f.title, url: f.url });
     }
+    if (n) fragsBySource.set(n, [...(fragsBySource.get(n) ?? []), f]);
     map.set(old, n ?? null);
   }
   const text = answer
@@ -410,5 +412,41 @@ export function renumberCitations(
       return n ? whole.replace(/\[\d{1,2}\]/, `[${n}]`) : '';
     })
     .replace(/(\[\d{1,2}\])(?:\1)+/g, '$1');
+  // Ссылка сразу прокручивает тему до названного в ответе пункта: XenForo не умеет якорь на пункт внутри поста,
+  // а текстовый фрагмент (#…:~:text=) понимают Chrome, Edge, Safari и Firefox — браузер сам находит и подсвечивает текст.
+  const points = [...new Set(text.match(POINT_IN_ANSWER) ?? [])];
+  for (const src of sources) {
+    const quotes = points.map((p) => pointQuote(p, fragsBySource.get(src.n) ?? [])).filter((q): q is string => Boolean(q));
+    src.url = withTextFragment(src.url, quotes.slice(0, 3));
+  }
   return { text, sources };
+}
+
+/** Номер пункта в ответе: «4.2», «4.15.1»; не «2.500$» и не часть другого числа. */
+const POINT_IN_ANSWER = /(?<![\d.])\d{1,2}(?:\.\d{1,2}){1,3}(?![\d]|\.\d)/g;
+
+/**
+ * Начало пункта, как оно написано на форуме: «4.2 DriveBy (DB)», «4.15.1 Запрещено уходить от активного».
+ * Номер + первые слова до «|» — по одному номеру браузер нашёл бы и «п. 4.2» в другом пункте.
+ */
+export function pointQuote(point: string, fragments: ContextFragment[]): string | null {
+  const re = new RegExp(`^\\s*(?:Пункт\\s*)?${point.replace(/\./g, '\\.')}\\.?[\\s:]+(.+)$`, 'u');
+  for (const f of fragments) {
+    for (const line of f.text.split('\n')) {
+      if (line.includes('(продолжение')) continue;
+      const m = re.exec(line);
+      if (!m) continue;
+      const words = m[1].split('|')[0].trim().split(/\s+/).slice(0, 4).join(' ').replace(/[.,;:—-]+$/u, '');
+      return words ? `${point} ${words}` : point;
+    }
+  }
+  return null;
+}
+
+/** «…#post-1:~:text=4.2%20DriveBy&text=…» — дефис, запятая, амперсанд и скобки в тексте директивы кодируются. */
+export function withTextFragment(url: string, quotes: string[]): string {
+  if (!quotes.length) return url;
+  const enc = (q: string) => encodeURIComponent(q).replace(/[-!'()*~]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  const directive = `:~:${quotes.map((q) => `text=${enc(q)}`).join('&')}`;
+  return url.includes('#') ? `${url}${directive}` : `${url}#${directive}`;
 }
