@@ -389,11 +389,15 @@ export function renumberCitations(
   const sources: { n: number; title: string; url: string }[] = [];
   const map = new Map<number, number | null>();
   const fragsBySource = new Map<number, ContextFragment[]>();
+  const fragmentOf = (i: number) => (i >= 1 && i <= fragments.length ? fragments[i - 1] : undefined);
+  // Жалоба «4.2 DriveBy (DB)» называется как пункт, но это разбор чужого случая: если ответ опирается на сами правила,
+  // ссылку на жалобу не показываем — игрок открывал её, думая, что это правило.
+  const citesRules = [...answer.matchAll(/\[(\d{1,2})\]/g)].some((m) => fragmentOf(Number(m[1]))?.kind === 'rule');
   for (const m of answer.matchAll(/\[(\d{1,2})\]/g)) {
     const old = Number(m[1]);
     if (map.has(old)) continue;
-    const f = old >= 1 && old <= fragments.length ? fragments[old - 1] : undefined;
-    if (!f) {
+    const f = fragmentOf(old);
+    if (!f || (citesRules && f.kind === 'complaint')) {
       map.set(old, null);
       continue;
     }
@@ -401,7 +405,7 @@ export function renumberCitations(
     if (n === undefined && sources.length < maxSources) {
       n = sources.length + 1;
       byUrl.set(f.url, n);
-      sources.push({ n, title: f.title, url: f.url });
+      sources.push({ n, title: f.kind === 'complaint' ? `Жалоба: ${f.title}` : f.title, url: f.url });
     }
     if (n) fragsBySource.set(n, [...(fragsBySource.get(n) ?? []), f]);
     map.set(old, n ?? null);

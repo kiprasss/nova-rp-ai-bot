@@ -262,6 +262,12 @@ describe('prompt', () => {
     ]);
     assert.equal(pointQuote('4.2', frags), '4.2 DriveBy (DB)');
     assert.equal(pointQuote('4.1', frags), null);
+    // Жалоба с названием-пунктом рядом с правилами — не источник; одна жалоба — с подписью «Жалоба:».
+    const withComplaint = [frags[0], { n: 2, title: '4.2 DriveBy (DB)', url: 'https://f/threads/3/', text: 'жалоба', kind: 'complaint' as const }];
+    const rc = renumberCitations('DriveBy — пункт 4.2 [1][2].', withComplaint);
+    assert.equal(rc.text, 'DriveBy — пункт 4.2 [1].');
+    assert.deepEqual(rc.sources.map((s) => s.title), ['Общие правила']);
+    assert.deepEqual(renumberCitations('Так решили в жалобе [2].', withComplaint).sources.map((s) => s.title), ['Жалоба: 4.2 DriveBy (DB)']);
     assert.equal(withTextFragment('https://f/t/', ['RP-ситуация']), 'https://f/t/#:~:text=RP%2D%D1%81%D0%B8%D1%82%D1%83%D0%B0%D1%86%D0%B8%D1%8F');
   });
 });
