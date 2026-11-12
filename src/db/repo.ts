@@ -528,6 +528,11 @@ export function rulesForDoc(docUrl: string): RuleRow[] {
   );
 }
 
+/** Тема уже объявлялась «новой» (после выпадения из списка и возврата — не повторять). */
+export function hasNewDocEvent(docUrl: string): boolean {
+  return !!get("SELECT 1 FROM rule_events WHERE doc_url = ? AND kind = 'new_doc' LIMIT 1", docUrl);
+}
+
 export function addRuleEvents(events: NewRuleEvent[]): void {
   if (!events.length) return;
   const ts = Date.now();

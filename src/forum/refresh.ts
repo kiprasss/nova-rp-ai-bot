@@ -12,6 +12,7 @@ import {
   setMeta,
   touchDocument,
   addRuleEvents,
+  hasNewDocEvent,
   rulesForDoc,
   type NewRuleEvent,
   updateGuild,
@@ -118,6 +119,8 @@ function isComplaintThread(fields: { label: string }[], breadcrumbs: string[]): 
   return fields.some((f) => isSensitiveLabel(f.label)) || breadcrumbs.some((b) => /жалоб/i.test(b));
 }
 
+const RULES_TITLE = /правил/i;
+
 async function indexThread(
   url: string,
   listingTs: number | null,
@@ -190,7 +193,7 @@ async function indexThread(
       for (const r of diff.removed) {
         events.push({ ...base, kind: 'removed', point: r.point, before_text: r.text, before_punishment: r.punishment, after_text: null, after_punishment: null, post_url: url });
       }
-    } else if (!cached && allowNewDocEvent) {
+    } else if (!cached && allowNewDocEvent && !hasNewDocEvent(url)) {
       events.push({ ...base, kind: 'new_doc', point: null, before_text: null, before_punishment: null, after_text: `Пунктов правил: ${rules.length}`, after_punishment: null, post_url: url });
     }
     addRuleEvents(events);
@@ -247,7 +250,14 @@ async function indexForum(url: string, report: RefreshReport, allowNewDocEvent: 
   const unique = new Map<string, ThreadListItem>();
   for (const it of items) if (!unique.has(it.url)) unique.set(it.url, it);
   const ordered = [...unique.values()]
-    .sort((a, b) => Number(b.sticky) - Number(a.sticky) || (b.lastPostTs ?? 0) - (a.lastPostTs ?? 0))
+    // Темы с правилами — до обрезки по лимиту, иначе тихая тема «выпадает» из базы и потом
+    // снова объявляется «новой».
+    .sort(
+      (a, b) =>
+        Number(b.sticky) - Number(a.sticky) ||
+        Number(RULES_TITLE.test(b.title)) - Number(RULES_TITLE.test(a.title)) ||
+        (b.lastPostTs ?? 0) - (a.lastPostTs ?? 0),
+    )
     .slice(0, config.scrapeMaxThreadsPerSource);
 
   const urls: string[] = [];
