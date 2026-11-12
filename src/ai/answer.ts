@@ -132,9 +132,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
       n: fragments.length + 1,
       title: r.doc_title,
       url: r.post_url,
-      text:
-        `Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}` +
-        (r.context ? `\nИз вступления к этим правилам:\n${r.context}` : ''),
+      text: ruleWithDetails(r) + (r.context ? `\nИз вступления к этим правилам:\n${r.context}` : ''),
       kind: 'rule',
     });
   }
@@ -147,7 +145,7 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
         n: fragments.length + 1,
         title: r.doc_title,
         url: r.post_url,
-        text: `Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}`,
+        text: ruleWithDetails(r),
         kind: 'rule',
       });
     }
@@ -242,6 +240,29 @@ export async function answerQuestion(input: AskInput): Promise<AskResult> {
   }
 
   return { kind: 'ai', text: truncate(answer, MAX_MESSAGE - sources.length - modelNote.length) + sources + modelNote, fragments, rewritten, analysis, model: usedModel };
+}
+
+/** Строка пункта или заголовок раздела: «4.3 Powergaming…», «5. Игровой процесс», «Пункт 4.2:». */
+const POINT_OR_SECTION = /^\s*(?:Пункт\s*)?\d{1,2}(?:\.\d{1,2})*\.?[\s:]/u;
+
+/**
+ * Пункт вместе с его подпунктами без номера, «Примечанием» и «Исключением». В таблице rules у «4.2 DriveBy (DB)»
+ * только заголовок, а само определение («убийство за рулём Т/С; таран…; стрельба из авто по пешим») — строками ниже.
+ * Без них на «что такое дб» бот брал «Проезд мимо (DriveBy)» из правил криминальных организаций.
+ */
+function ruleWithDetails(r: { doc_url: string; point: string; text: string; punishment: string | null }): string {
+  const base = `Пункт ${r.point}: ${r.text}${r.punishment ? `\nНаказание: ${r.punishment}` : ''}`;
+  const chunk = chunkForRulePoint(r.doc_url, r.point);
+  if (!chunk) return base;
+  const lines = chunk.text.split('\n');
+  const start = lines.findIndex((l) => new RegExp(`^\\s*(?:Пункт\\s*)?${r.point.replace(/\./g, '\\.')}\\.?[\\s:]`).test(l));
+  if (start < 0) return base;
+  const details: string[] = [];
+  for (const l of lines.slice(start + 1)) {
+    if (POINT_OR_SECTION.test(l)) break;
+    if (l.trim()) details.push(l.trim());
+  }
+  return details.length ? `${base}\n${truncate(details.join('\n'), 1200)}` : base;
 }
 
 /** Игрок просит перечислить правила, а не спрашивает про один случай. */
