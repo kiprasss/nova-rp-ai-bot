@@ -103,7 +103,7 @@ const OP_SECTION: Record<string, Section> = {
   faqadd: 'faq', faqaddm: 'faq', faqdel: 'faq',
   ailen: 'aiset', aitemp: 'aiset', aictx: 'aiset', airew: 'aiset', aisrc: 'aiset', aiinst: 'aiset', aiinstm: 'aiset',
   aipage2: 'aiset', aitone: 'aiset', aimax: 'aiset', aifb: 'aiset',
-  aicmp: 'aiset', aiauto: 'aiset', aithr: 'aiset', aimdl: 'aiset', aifaq: 'aiset', aiforum: 'aiset',
+  aicmp: 'aiset', aiauto: 'aiset', aithr: 'aiset', aimdl: 'aiset', aifaq: 'aiset', aiforum: 'aiset', aithink: 'aiset',
   wizapply: 'wizard',
 };
 
@@ -577,6 +577,7 @@ async function viewAiSettings2(guild: Guild, note?: string): Promise<BaseMessage
         `🤖 **Подпись с моделью:** ${onOff(g.ai_show_model)}`,
         `📌 **FAQ раньше AI:** ${onOff(g.ai_faq_first)}`,
         `📖 **Только форум:** ${onOff(g.ai_forum_only)} _(вкл — без болтовни и общих знаний: отвечает только тем, что нашёл на форуме)_`,
+        `🧠 **Ход мыслей в #ai-логи:** ${onOff(g.ai_log_thoughts)} _(вопрос, поиск, фрагменты и черновик модели к каждому ответу)_`,
       ]
         .filter((l, i) => i !== 0 || l)
         .join('\n'),
@@ -615,6 +616,7 @@ async function viewAiSettings2(guild: Guild, note?: string): Promise<BaseMessage
       ),
       row(
         toggle('aiforum', 'Только форум', g.ai_forum_only, '📖'),
+        toggle('aithink', 'Ход мыслей', g.ai_log_thoughts, '🧠'),
         button(`cfg:open:${guild.id}:aiset`, 'Основные настройки AI', ButtonStyle.Secondary, '⬅️'),
         back(guild.id),
       ),
@@ -1133,11 +1135,12 @@ export async function handleSettingsInteraction(i: CfgInteraction): Promise<void
     case 'aithr':
     case 'aimdl':
     case 'aifaq':
-    case 'aiforum': {
+    case 'aiforum':
+    case 'aithink': {
       const col = (
-        { aicmp: 'ai_search_complaints', aiauto: 'ai_auto_reply', aithr: 'ai_threads', aimdl: 'ai_show_model', aifaq: 'ai_faq_first', aiforum: 'ai_forum_only' } as const
+        { aicmp: 'ai_search_complaints', aiauto: 'ai_auto_reply', aithr: 'ai_threads', aimdl: 'ai_show_model', aifaq: 'ai_faq_first', aiforum: 'ai_forum_only', aithink: 'ai_log_thoughts' } as const
       )[op];
-      const label = { aicmp: 'жалобы в поиске', aiauto: 'автоответ в #ai-помощник', aithr: 'ответ в ветке', aimdl: 'подпись модели', aifaq: 'FAQ первым', aiforum: 'только форум' }[op];
+      const label = { aicmp: 'жалобы в поиске', aiauto: 'автоответ в #ai-помощник', aithr: 'ответ в ветке', aimdl: 'подпись модели', aifaq: 'FAQ первым', aiforum: 'только форум', aithink: 'ход мыслей в #ai-логи' }[op];
       const g = ensureGuildRow(guildId, config.defaultRefreshHours);
       const next = g[col] ? 0 : 1;
       updateGuild(guildId, { [col]: next });

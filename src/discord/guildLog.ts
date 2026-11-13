@@ -64,6 +64,7 @@ export async function logAnswerTrace(
   replyUrl?: string,
 ): Promise<void> {
   if (!guildId || res.kind !== 'ai' || !res.fragments) return;
+  if (!getGuild(guildId)?.ai_log_thoughts) return;
   const frags = res.fragments.map((f) => `[${f.n}] ${truncate(f.title, 70)}`).join('\n') || '—';
   const parts = [
     `**Игрок:** <@${userId}>${replyUrl ? ` · [ответ](${replyUrl})` : ''}${res.model ? ` · ${res.model}` : ''}`,

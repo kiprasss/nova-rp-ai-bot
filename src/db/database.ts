@@ -202,6 +202,7 @@ function migrate(d: DatabaseSync): void {
       ['ai_show_model', 'INTEGER NOT NULL DEFAULT 0'],
       ['ai_faq_first', 'INTEGER NOT NULL DEFAULT 1'],
       ['ai_forum_only', 'INTEGER NOT NULL DEFAULT 0'],
+      ['ai_log_thoughts', 'INTEGER NOT NULL DEFAULT 0'],
       ['complaints_channel_id', 'TEXT'],
       ['last_complaint_event_id', 'INTEGER NOT NULL DEFAULT 0'],
     ],
